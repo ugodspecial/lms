@@ -18,43 +18,41 @@ capability exists when it does not.
 | Styling | Tailwind CSS | **^4.3** (4.3.3 current) | CSS-first config via `@theme`; no `tailwind.config.js` needed |
 | Micro-interactions | Alpine.js | **^3** | Bundled with Livewire 4 |
 | Templating | Blade | Laravel 13 built-in | — |
-| Build tool | Vite | **^7** (Laravel 13 default) | Build step is **dev/CI only** — compiled assets are committed or built in CI so production shared hosting needs no Node |
-| RBAC | spatie/laravel-permission | **^7.0** | v7 requires `php: ^8.3` and `illuminate/*: ^12.0\|^13.0` — confirmed on Packagist |
+| Build tool | Vite | **^8** (Laravel 13 skeleton default) | Build step is **dev/CI only** — compiled assets are committed or built in CI so production shared hosting needs no Node. Note: plain Vite 6+ defaults `build.manifest` to `.vite/manifest.json`, while `laravel-vite-plugin` pins it to `manifest.json`, which is what `Illuminate\Foundation\Vite` reads — so `vite.config.js` must not set `build.manifest` at all |
+| RBAC | spatie/laravel-permission | **^8.3** | v8 is the line that supports Laravel 13; requires `php: ^8.3` — confirmed on Packagist |
 | 2FA / auth scaffolding | laravel/fortify | **^1** (Laravel 13 compatible) | Headless 2FA, email verification, password reset — pairs with custom Blade/Livewire UI |
 | OAuth login | laravel/socialite | **^5** | Google + Microsoft (`azure`/Graph) providers |
 | HTTP client | Laravel `Http` facade | built-in | Used for Paystack / Zoom / Google with retry + logging middleware |
 | PDF | barryvdh/laravel-dompdf | **^3** | **Pure PHP** — no `wkhtmltopdf` binary, so it works on cPanel where `exec()` is usually disabled |
 | QR codes | bacon/bacon-qr-code | **^3** | Pure PHP, renders PNG/SVG without Imagick |
 | CSV | league/csv | **^9** | Streaming reads for large imports (§80) |
-| Testing | Pest | **^4** | Laravel 13 ecosystem default; PHPUnit 12 compatible |
-| Static analysis | larastan/larastan | **^3** | Level 6 target by Phase 11 |
+| Testing | phpunit/phpunit | **^12.5** | What the Laravel 13 skeleton ships. `phpunit.xml` sets `failOnWarning`, `failOnRisky` and `failOnDeprecation` so a test that silently asserts nothing fails the build rather than passing it |
+| Static analysis | larastan/larastan | **^3.11** | Level 5 in Phase 0, rising to level 6 by Phase 11 |
 | Style | laravel/pint | **^1** | PSR-12 + Laravel preset, enforced in CI |
 
-### Composer manifest (Phase 0 will write this)
+### Composer manifest (as written by Phase 0)
 
 ```jsonc
 {
   "require": {
     "php": "^8.3",
-    "laravel/framework": "^13.0",
-    "laravel/fortify": "^1.25",
-    "laravel/sanctum": "^4.0",
-    "laravel/socialite": "^5.16",
-    "laravel/tinker": "^2.10",
-    "livewire/livewire": "^4.2",
-    "spatie/laravel-permission": "^7.0",
-    "barryvdh/laravel-dompdf": "^3.1",
-    "bacon/bacon-qr-code": "^3.0",
-    "league/csv": "^9.16",
-    "guzzlehttp/guzzle": "^7.9"
+    "laravel/framework": "^13.17",
+    "laravel/fortify": "^1.39",
+    "laravel/sanctum": "^4.3",
+    "laravel/socialite": "^5.31",
+    "laravel/tinker": "^3.0",
+    "livewire/livewire": "^4.4",
+    "spatie/laravel-permission": "^8.3"
   },
   "require-dev": {
-    "pestphp/pest": "^4.0",
-    "pestphp/pest-plugin-laravel": "^4.1",
-    "laravel/pint": "^1.18",
-    "larastan/larastan": "^3.9",
-    "fakerphp/faker": "^1.24",
-    "mockery/mockery": "^1.6"
+    "fakerphp/faker": "^1.23",
+    "larastan/larastan": "^3.11",
+    "laravel/pail": "^1.2.5",
+    "laravel/pao": "^1.0.6",
+    "laravel/pint": "^1.27",
+    "mockery/mockery": "^1.6",
+    "nunomaduro/collision": "^8.6",
+    "phpunit/phpunit": "^12.5.12"
   },
   "config": { "optimize-autoloader": true, "preferred-install": "dist", "sort-packages": true }
 }
@@ -70,6 +68,16 @@ capability exists when it does not.
 | `spatie/laravel-medialibrary` | Its conversions pipeline assumes ImageMagick/GD availability and a mutable public disk. A lean `files` registry + streamed authorized downloads is a better fit for §40/§59 (ADR-10) |
 | `predis/predis`, `laravel/horizon`, `laravel/reverb` | Redis/Horizon violate the shared-hosting constraint (§3, §69). Database driver first, config-only swap later |
 | `spatie/laravel-scout` + Meilisearch | Requires a persistent search daemon. MySQL FULLTEXT + authorized query scopes first, Scout-shaped interface so it can be swapped (§54) |
+
+**Deferred**, not excluded — each is added by the phase that first needs it, so
+that Phase 0 carries no dependency whose behaviour cannot yet be tested:
+
+| Package | Constraint | Added by |
+|---------|-----------|----------|
+| `barryvdh/laravel-dompdf` **^3.1** | Pure PHP; no `wkhtmltopdf` binary, so it works where `exec()` is disabled | Phase 3 (certificates) |
+| `bacon/bacon-qr-code` **^3** | Pure PHP; renders PNG/SVG without Imagick | Phase 3 (2FA enrolment QR) |
+| `league/csv` **^9** | Streaming reads for large imports (§80) | Phase 10 (bulk import/export) |
+| `guzzlehttp/guzzle` **^7.9** | Already present transitively via `laravel/framework`; declared explicitly only when a provider needs to pin it | Phase 7 (integrations) |
 
 ---
 
@@ -133,7 +141,7 @@ phase rather than an assumed one.
 
 | Option | How it works | Pros | Cons |
 |--------|--------------|------|------|
-| **A. GitHub Actions CI (recommended)** | I add `.github/workflows/ci.yml` that on every push installs PHP 8.4 + Composer, runs `composer install`, boots **MySQL 8 as a service container**, runs `php artisan migrate --force`, then `pint --test`, `larastan`, and `pest --coverage`. I read the results via `gh run list` / `gh run view` and fix failures in subsequent turns | Real execution, real database, no work for you, permanent regression gate, results are visible to me so I can iterate honestly | Each verification round costs a CI run (~4–6 min) |
+| **A. GitHub Actions CI (recommended)** | I add `.github/workflows/ci.yml` that on every push installs PHP 8.4 + Composer, runs `composer install`, boots **MySQL 8 as a service container**, runs `php artisan migrate --force`, then `pint --test`, `larastan`, and `phpunit`. I read the results via `gh run list` / `gh run view` and fix failures in subsequent turns | Real execution, real database, no work for you, permanent regression gate, results are visible to me so I can iterate honestly | Each verification round costs a CI run (~4–6 min) |
 | **B. You run it locally** | I ship code + a `SETUP.md`; you run `composer install && php artisan migrate && php artisan test` and paste failures back | Fastest feedback if you already have PHP 8.3+ | Manual loop; you become the test runner |
 | **C. Provide a PHP-capable environment** | Point this session at a sandbox/host with PHP 8.3+, Composer and MySQL | I can iterate directly | Requires infra change on your side |
 
@@ -170,7 +178,7 @@ These are the only blockers to starting Phase 0. Everything else in the design i
 |---|----------|------------------------------|
 | D1 | **Verification strategy** (§3.2) | Option A — GitHub Actions CI with a MySQL 8 service container |
 | D2 | **Scaffold approach.** Composer cannot run here, so the Laravel 13 skeleton cannot be generated by `composer create-project`. Either (a) I hand-write the complete, correct skeleton (`composer.json`, `artisan`, `bootstrap/app.php`, all `config/*`, `public/index.php`, `.env.example`, service providers) so the repo is a real Laravel 13 app the moment you run `composer install`; or (b) you run `composer create-project laravel/laravel:^13.0 .` and I layer the application on top | Option (a) — hand-written skeleton, pinned to `laravel/framework: ^13.0`. It keeps the repo self-contained and reviewable in one place |
-| D3 | **Package set** (§1) — in particular Fortify for 2FA/verification/reset, spatie/laravel-permission v7 for RBAC, dompdf for certificates | Accept all as listed. Every one has a pure-PHP, shared-hosting-safe implementation |
+| D3 | **Package set** (§1) — in particular Fortify for 2FA/verification/reset, spatie/laravel-permission v8 for RBAC, dompdf for certificates | Accept all as listed. Every one has a pure-PHP, shared-hosting-safe implementation |
 | D4 | **Naming**: `parents` table (spec's "Parent/Guardian") vs `guardians`; `cohorts` vs `student_groups`; `students` vs `student_profiles` | `parents`, `cohorts`, `students` — matches the spec's own vocabulary, which reduces translation cost for future developers |
 | D5 | **Currency launch set** | `NGN` primary; `Money` VO ships with exponents for NGN, USD, GHS, ZAR, KES, XOF, GBP, EUR so §61 is satisfied from day one |
 

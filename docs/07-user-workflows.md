@@ -3,7 +3,7 @@
 **Deliverable:** spec §102.7 — *"A list of all major user workflows."* Realises §100's three
 end-to-end journeys (parent, tutor, administrator) as 24 concrete, testable workflows.
 
-Each workflow is written so it can be turned directly into a Pest feature test:
+Each workflow is written so it can be turned directly into a PHPUnit feature test:
 **Actor → Trigger → Steps → Domain effects → Notifications → Failure paths.**
 
 Notation: `→` user action · `⇢` system action · `⚠` failure path · `🔒` authorization check ·

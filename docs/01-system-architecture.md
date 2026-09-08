@@ -444,7 +444,7 @@ Three cooperating mechanisms, in this order of precedence:
 | Layer | Mechanism | Example |
 |-------|-----------|---------|
 | 1. Global bypass | `Gate::before` for Super Admin **only** | `if ($user->hasRole(Permissions::ROLE_SUPER_ADMIN)) return true;` |
-| 2. Permission gate | spatie/laravel-permission v7, permissions defined in a PHP registry `app/Domain/Administration/Permissions.php` (an enum-like final class with `const` arrays grouped by module) | `students.view`, `tutors.approve`, `payments.refund` |
+| 2. Permission gate | spatie/laravel-permission v8, permissions defined in a PHP registry `app/Domain/Administration/Permissions.php` (an enum-like final class with `const` arrays grouped by module) | `students.view`, `tutors.approve`, `payments.refund` |
 | 3. Resource policy | Laravel Policy per aggregate, combining permission checks **and** ownership/relationship checks | `StudentPolicy::viewAcademics()` = has `students.view` **OR** is an authorized guardian of *this* student |
 
 **Rule R10 in practice:** controllers and Livewire components never call

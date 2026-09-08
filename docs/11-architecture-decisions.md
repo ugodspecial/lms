@@ -450,7 +450,7 @@ Comparisons and ordering must be unambiguous.
 
 ---
 
-## ADR-09 — RBAC via spatie/laravel-permission v7 + policies; permissions, never role strings
+## ADR-09 — RBAC via spatie/laravel-permission v8 + policies; permissions, never role strings
 
 **Status:** Accepted · **Spec:** §6, §28, §30, §49, §57, §81
 
@@ -460,8 +460,8 @@ hold several profiles/roles simultaneously. §28/§49 require that evaluators be
 unable to approve tutors or see financial data.
 
 **Decision.**
-1. `spatie/laravel-permission` **v7** (verified: requires `php: ^8.3` and
-   `illuminate/*: ^12.0|^13.0` — the Laravel-13-compatible line).
+1. `spatie/laravel-permission` **v8** (verified: requires `php: ^8.3` —
+   the Laravel-13-compatible line).
 2. **168 permission strings** defined in a code registry
    (`app/Domain/Administration/Permissions.php`) and synced to the database by an idempotent
    seeder. Code is the source of truth for *what exists*; the database is the source of truth

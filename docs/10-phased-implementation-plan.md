@@ -40,14 +40,14 @@ The repo contains only a LICENSE. Phase 0 makes it a real Laravel 13 application
 
 | §92 step | Content |
 |---|---|
-| **Architecture** | Composer skeleton pinned to `laravel/framework: ^13.0`, `php: ^8.3`. PSR-4 map for `app/Domain/*`. Vite 7 + Tailwind 4 + Alpine. Pest 4, Pint, Larastan. GitHub Actions CI with a MySQL 8 service container |
+| **Architecture** | Composer skeleton pinned to `laravel/framework: ^13.17`, `php: ^8.3`. PSR-4 map for `app/Domain/*`. Vite 8 + Tailwind 4 + Alpine. PHPUnit 12, Pint, Larastan. GitHub Actions CI with a MySQL 8 service container |
 | **Database** | `config/database.php` for MySQL 8 + MariaDB; `utf8mb4_unicode_ci`; strict mode; a `.env.testing` using a dedicated CI database |
 | **Models** | none yet |
 | **Business rules** | none yet |
 | **Permissions** | none yet |
 | **UI** | Tailwind 4 `@theme` design tokens (colour, spacing, radius, type scale, shadows) in `resources/css/app.css`; base layouts stubbed so Phase 1 has a shell to build on |
-| **Tests** | `tests/TestCase.php`, Pest config, one smoke test asserting the app boots and `/` returns 200 |
-| **Files created** | `composer.json`, `package.json`, `vite.config.js`, `artisan`, `bootstrap/app.php`, `bootstrap/providers.php`, all `config/*.php`, `public/index.php`, `public/.htaccess`, `.env.example`, `.env.testing`, `.gitignore`, `.editorconfig`, `phpunit.xml`/`pest.php`, `pint.json`, `phpstan.neon`, `.github/workflows/ci.yml`, `README.md`, `SETUP.md`, `deploy/cpanel/*` |
+| **Tests** | `tests/TestCase.php`, `phpunit.xml`, one smoke test asserting the app boots and `/` returns 200 |
+| **Files created** | `composer.json`, `package.json`, `vite.config.js`, `artisan`, `bootstrap/app.php`, `bootstrap/providers.php`, all `config/*.php`, `public/index.php`, `public/.htaccess`, `.env.example`, `.env.testing`, `.gitignore`, `.editorconfig`, `phpunit.xml`, `pint.json`, `phpstan.neon`, `.github/workflows/ci.yml`, `README.md`, `SETUP.md`, `deploy/cpanel/*` |
 
 **Exit:** CI green on a bare Laravel 13 app; `platform:doctor` command stub exists and reports
 PHP version, extensions, DB connectivity, storage writability.
@@ -63,7 +63,7 @@ cleanly. If you prefer, run `composer create-project` yourself and I will layer 
 
 | §92 step | Content |
 |---|---|
-| **Architecture** | Four layers established. `Identity` + `Administration` domains. Fortify for password/2FA/verification/reset (headless, so the Blade/Livewire UI stays ours). spatie/laravel-permission v7 for RBAC. Policy registration in `AuthServiceProvider` with the Super-Admin `Gate::before`. Middleware: `AuthenticateArea`, `EnsurePermission`, `SetUserTimezone`, `SecurityHeaders`. Design system (`ui.*` Blade components). Audit + settings + files services |
+| **Architecture** | Four layers established. `Identity` + `Administration` domains. Fortify for password/2FA/verification/reset (headless, so the Blade/Livewire UI stays ours). spatie/laravel-permission v8 for RBAC. Policy registration in `AuthServiceProvider` with the Super-Admin `Gate::before`. Middleware: `AuthenticateArea`, `EnsurePermission`, `SetUserTimezone`, `SecurityHeaders`. Design system (`ui.*` Blade components). Audit + settings + files services |
 | **Database changes** | 20 tables: `users`, `password_reset_tokens`, `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs`, `notifications`, `personal_access_tokens`, `roles`, `permissions`, `model_has_roles`, `model_has_permissions`, `role_has_permissions`, `connected_accounts`, `consents`, `settings`, `audit_logs`, `files` |
 | **Models** | `User`, `ConnectedAccount`, `Consent`, `Setting`, `AuditLog`, `File` (+ spatie's `Role`, `Permission`) |
 | **Business rules** | `SettingsService` (typed casts, single cache key, audit on change) · `AuditLogger` + `SensitiveDataScrubber` · `FileService` + `DownloadAuthorizer` (visibility classes) · `TwoFactorPolicy` (privileged roles must have 2FA) · `OAuthLinkingService` · user-status transitions |

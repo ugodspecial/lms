@@ -100,6 +100,15 @@ Tests use the **separate** `eduplatform_test` database and run
 `migrate:fresh` — they drop every table in whatever database
 `.env.testing` names. Never point that file at a database you care about.
 
+`.env.testing` also carries a throwaway `APP_KEY`, so a fresh clone can run the
+suite with no setup step. It is not a secret: it protects cookies and encrypted
+columns for a database that is wiped on every run and holds no real person's
+data. It must decode to exactly 32 bytes or the encrypter throws *Unsupported
+cipher or incorrect key length* the first time a test touches a session. **Never
+copy it into `.env`** — production keys come from `php artisan key:generate` and
+stay out of git. `phpunit.xml` deliberately does not declare an `APP_KEY`, so
+there is exactly one source for it.
+
 No test may use a real payment credential. `phpunit.xml` sets fake Paystack keys
 and every external call is made through `Http::fake()` or a manual gateway
 double.

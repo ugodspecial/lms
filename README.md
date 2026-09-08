@@ -229,9 +229,10 @@ built asset, a rendered response or the source tree.
 | [10](docs/10-phased-implementation-plan.md) | Phased plan and exit gates |
 | [11](docs/11-architecture-decisions.md) | 15 ADRs |
 
-Two documents currently disagree with the code and will be corrected: they name
-Pest 4 and `spatie/laravel-permission` v7, while the platform uses PHPUnit 12
-and v8. The code follows reality; the docs follow next.
+The docs were written before any code and named Pest 4 and
+`spatie/laravel-permission` v7. Both have been corrected to what Laravel 13
+actually ships and supports — **PHPUnit 12** and **v8** — and `composer.json` is
+authoritative for any version this README or the docs quote.
 
 ---
 

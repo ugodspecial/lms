@@ -19,10 +19,15 @@ Before changing a domain concept, find it in `docs/02-domain-model.md` or
 `docs/04-database-table-inventory.md`. If the code and the docs disagree, one of
 them is wrong — say which, and fix both. Do not silently pick one.
 
-Known doc/code divergence: the docs name **Pest 4** and
-**`spatie/laravel-permission` v7**. The platform uses **PHPUnit 12** and
-**v8**, because that is what Laravel 13 actually ships and supports. The code is
-right; the docs need a correction pass. Do not "fix" the code back to Pest.
+The docs originally named **Pest 4** and **`spatie/laravel-permission` v7**; both
+have been corrected to **PHPUnit 12** and **v8**, which is what the Laravel 13
+skeleton ships and supports. Do not "fix" the code back to Pest.
+
+The general rule that came out of it: the docs own *intent* — domains, rules,
+invariants, workflows. `composer.json` and `package.json` own *versions*. A
+dependency constraint is decided by what the framework release actually supports,
+which cannot be known when a design document is written, so a version quoted in
+prose is a plan and never a fact.
 
 ---
 

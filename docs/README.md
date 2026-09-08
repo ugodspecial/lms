@@ -99,7 +99,7 @@ decision record in [11-architecture-decisions.md](11-architecture-decisions.md).
 | R7 | **Money is decimal-safe and currency-aware.** No floats, no hard-coded ₦. | `Money` VO + `amount_minor` INT + `currency` CHAR(3) (ADR-02) |
 | R8 | **All timestamps stored UTC; all display timezone-aware.** | UTC `datetime` columns + IANA `timezone` columns + `Timezone` presenter |
 | R9 | **Protected files are never at guessable public URLs.** | `files.visibility` ∈ {public, authenticated, private, restricted} + signed streaming route (ADR-10) |
-| R10 | **Authorization is permission-based, not role-string-based.** | spatie/laravel-permission v7 + Policies; `Gate::before` only for Super Admin (ADR-09) |
+| R10 | **Authorization is permission-based, not role-string-based.** | spatie/laravel-permission v8 + Policies; `Gate::before` only for Super Admin (ADR-09) |
 | R11 | **No fake functionality.** An unconfigured integration degrades to an explicit, labelled state — never a button that lies. | `NullObject` providers + `IntegrationStatus` health reporting |
 | R12 | **No hard-coded business data.** Grading schemes, academic years, prices, currency, age of majority are DB/env-driven. | `settings` table + seeders marked `demo` |
 | R13 | **Student data is sensitive.** Least privilege everywhere; parents see only their linked children. | `parent_student` authorization + `StudentPolicy` + audit log |
