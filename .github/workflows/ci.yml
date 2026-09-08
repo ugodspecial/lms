@@ -32,14 +32,19 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Kept here rather than repeated per step so the PHP version used by the
-  # toolchain and by the test matrix cannot drift apart.
+  # Single source for the toolchain versions, so the PHP used to run the tests
+  # and the PHP used to run the analysis cannot drift apart.
+  #
+  # Note: the `env` context is NOT available in `jobs.<job_id>.name` (GitHub
+  # allows only github/needs/strategy/matrix/vars/inputs there), so job names
+  # below are literal strings. Referencing env in a job name is a workflow
+  # validation error that fails the whole run before any job is created.
   PHP_VERSION: '8.4'
   NODE_VERSION: '22'
 
 jobs:
   tests:
-    name: Tests (PHP ${{ env.PHP_VERSION }}, MySQL 8)
+    name: Tests (MySQL 8)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -211,7 +216,7 @@ jobs:
           php-version: ${{ env.PHP_VERSION }}
           extensions: bcmath, intl, mbstring, curl, zip, gd, fileinfo, pdo, pdo_mysql
           coverage: none
-          tools: composer:v2, pint
+          tools: composer:v2
 
       - name: Install PHP dependencies
         run: |
@@ -228,4 +233,4 @@ jobs:
         # switched off — so the diff is printed and the step is flipped to
         # blocking immediately after that first normalisation pass.
         continue-on-error: true
-        run: vendor/bin/pint --test --format=github
+        run: vendor/bin/pint --test -v
