@@ -62,8 +62,12 @@ final class EnsureIntegrationConfigured
     }
 
     /**
+     * Describe what an integration is missing.
+     *
+     * Returns null when the integration is fully configured and enabled, which
+     * is the signal for handle() to let the request through.
+     *
      * @return array{label: string, keys: list<string>, hint: string, docs: string}|null
-     *         null when the integration is fully configured and enabled.
      */
     public function missingRequirements(string $integration): ?array
     {

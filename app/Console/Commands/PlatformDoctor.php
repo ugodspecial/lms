@@ -422,25 +422,39 @@ final class PlatformDoctor extends Command
         // ADR-13: compiled assets are committed, because shared hosting has no
         // Node runtime. If they are missing every page renders unstyled.
         //
-        // Vite 6+ writes the manifest to build/.vite/manifest.json; earlier
-        // versions wrote build/manifest.json. Both are checked so a host running
-        // an older committed build is not reported as broken.
-        $manifest = collect([
-            public_path('build/.vite/manifest.json'),
-            public_path('build/manifest.json'),
-        ])->first(static fn (string $path): bool => File::exists($path));
+        // Only public/build/manifest.json counts. Illuminate\Foundation\Vite
+        // resolves the manifest as public_path($buildDirectory.'/'.$filename) with
+        // $filename defaulting to 'manifest.json', so a manifest anywhere else
+        // makes every @vite directive throw ViteManifestNotFoundException — a
+        // 500 on every page, not a missing stylesheet.
+        //
+        // Plain Vite 6+ defaults build.manifest to '.vite/manifest.json';
+        // laravel-vite-plugin pins it to 'manifest.json'. Setting `manifest: true`
+        // in vite.config.js discards the plugin's choice and reproduces that 500
+        // exactly, so the misplaced-manifest case gets its own diagnosis rather
+        // than the generic "missing" one.
+        $canonical = public_path('build/manifest.json');
 
-        if ($manifest === null) {
-            $this->recordFail('public/build manifest', 'Missing. Assets are committed to the repo (ADR-13) — run `npm run build` locally and commit, or restore them from git.');
+        if (! File::exists($canonical)) {
+            File::exists(public_path('build/.vite/manifest.json'))
+                ? $this->recordFail(
+                    'public/build manifest',
+                    'Vite wrote it to build/.vite/manifest.json but Laravel reads build/manifest.json — every page will 500. '.
+                    'Remove `build.manifest` from vite.config.js so laravel-vite-plugin pins the filename, then `npm run build` and commit.'
+                )
+                : $this->recordFail(
+                    'public/build manifest',
+                    'Missing. Assets are committed to the repo (ADR-13) — run `npm run build` locally and commit, or restore them from git.'
+                );
 
             return;
         }
 
-        $this->recordPass('public/build manifest', str_replace(public_path('').'/', '', $manifest));
+        $this->recordPass('public/build manifest', str_replace(public_path('').'/', '', $canonical));
 
         try {
             /** @var array<string, array{file?: string}> $entries */
-            $entries = json_decode((string) File::get($manifest), true, 512, JSON_THROW_ON_ERROR) ?? [];
+            $entries = json_decode((string) File::get($canonical), true, 512, JSON_THROW_ON_ERROR) ?? [];
 
             $missing = [];
 

@@ -24,19 +24,22 @@ final class MoneyFormatter
     {
         [$minor, $currency] = $this->resolve($amount, $currencyCode);
 
-        $major = $currency->toMajor($minor);
-        [$whole, $fraction] = array_pad(explode('.', $major, 2), 2, '');
+        // Format the magnitude and apply the sign once, at the end.
+        //
+        // toMajor() already renders a minus for a negative amount, so formatting
+        // its output and then prefixing another minus produced "--45,000.00".
+        // Taking abs() here keeps exactly one sign in exactly one place.
+        [$whole, $fraction] = array_pad(explode('.', $currency->toMajor(abs($minor)), 2), 2, '');
 
         $whole = number_format((int) $whole, 0, '', $currency->thousandsSeparator);
         $body = $currency->exponent > 0 ? $whole.$currency->decimalSeparator.$fraction : $whole;
+        $sign = $minor < 0 ? '-' : '';
 
-        if ($minor < 0) {
-            $body = '-'.$body;
-        }
-
+        // The sign leads the symbol rather than following it: "-₦45,000.00"
+        // reads as a negative amount, "₦-45,000.00" reads as a formatting error.
         return $currency->symbolFirst
-            ? $currency->symbol.$body
-            : $body.' '.$currency->symbol;
+            ? $sign.$currency->symbol.$body
+            : $sign.$body.' '.$currency->symbol;
     }
 
     /**

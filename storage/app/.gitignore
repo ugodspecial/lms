@@ -1,4 +1,13 @@
+# Every storage tier gets a committed directory but never committed contents.
+#
+# The directories themselves must exist in a fresh clone: platform:doctor fails
+# the deployment when a tier is missing, and the first upload into a tier that
+# does not exist would fail on a host where the web user cannot create
+# directories under storage/app. The per-directory .gitignore in each tier then
+# keeps its contents out of git.
 *
+!authenticated/
 !private/
 !public/
+!restricted/
 !.gitignore

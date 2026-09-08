@@ -24,7 +24,14 @@ export default defineConfig({
         // Assets are committed to /public/build (ADR-13) because cPanel shared
         // hosting runs `git pull`, not `npm install`. Content-hashed names keep
         // browser caches correct across a deploy without a cache-bust query.
-        manifest: true,
+        //
+        // build.manifest is deliberately NOT set here. laravel-vite-plugin pins
+        // it to "manifest.json"; plain Vite 6+ defaults to ".vite/manifest.json".
+        // Writing `manifest: true` accepts Vite's default and silently moves the
+        // file out from under Illuminate\Foundation\Vite, which looks for
+        // public/build/manifest.json and throws ViteManifestNotFoundException on
+        // every page render. The build still emits a manifest — just where
+        // Laravel expects it.
         assetsDir: 'assets',
         rollupOptions: {
             output: {

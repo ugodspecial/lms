@@ -248,6 +248,55 @@ final class PlatformDoctorTest extends TestCase
         $this->assertStringContainsString('Result', $output);
     }
 
+    public function test_it_fails_when_the_vite_manifest_is_not_where_laravel_reads_it(): void
+    {
+        $canonical = public_path('build/manifest.json');
+        $misplaced = public_path('build/.vite/manifest.json');
+
+        $this->assertFileExists(
+            $canonical,
+            'Assets are committed to the repo (ADR-13), so the build manifest must exist in a fresh clone.'
+        );
+
+        $backup = (string) file_get_contents($canonical);
+
+        try {
+            // The failure this guards against is silent in the build and total at
+            // runtime. Setting `build.manifest: true` in vite.config.js discards
+            // the filename laravel-vite-plugin pins, Vite 6+ then writes
+            // .vite/manifest.json, and Illuminate\Foundation\Vite keeps looking
+            // in build/manifest.json — so every @vite directive throws
+            // ViteManifestNotFoundException and every page returns a 500.
+            //
+            // A build that succeeds and a site that is entirely down is exactly
+            // the case a deployment health check exists to catch.
+            @mkdir(dirname($misplaced), 0775, true);
+            file_put_contents($misplaced, $backup);
+            unlink($canonical);
+
+            $this->doctor();
+
+            $this->assertSame(
+                'fail',
+                $this->statusFor('public/build manifest'),
+                'A manifest Laravel cannot read must be reported as a failure, not a pass or a warning.'
+            );
+
+            // The detail must name the fix. "Missing" alone sends an operator
+            // looking for a build that succeeded ten minutes ago.
+            $detail = $this->detailFor('public/build manifest');
+            $this->assertStringContainsString('.vite/manifest.json', $detail);
+            $this->assertStringContainsString('vite.config.js', $detail);
+        } finally {
+            // public/build is committed, so it is shared state across the whole
+            // run: restore it whatever the assertions did, or every later test
+            // inherits a broken build directory and fails for the wrong reason.
+            @unlink($misplaced);
+            @rmdir(dirname($misplaced));
+            file_put_contents($canonical, $backup);
+        }
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private function doctor(bool $skipDatabase = true): int
