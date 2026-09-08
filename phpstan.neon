@@ -45,6 +45,20 @@ parameters:
     reportUnmatchedIgnoredErrors: false
 
     excludePaths:
+        analyse:
+            # Published third-party artifacts, committed byte-identical to
+            # spatie/laravel-permission 8.3.0 so that re-publishing from the
+            # package produces no diff and upstream changes stay visible.
+            #
+            # They are excluded from analysis rather than annotated because
+            # editing them to satisfy this project's PHPStan level would break
+            # exactly that property, and because spatie analyses them in its own
+            # CI. The exclusion is scoped to the two published files, so
+            # everything this project writes under database/ and config/ is still
+            # analysed.
+            - database/migrations/2026_09_08_100400_create_permission_tables.php
+            - config/permission.php
+
         analyseAndScan:
             # Compiled views are generated output, not source.
             - storage/framework/views
