@@ -11,8 +11,19 @@
 #  silently ignores it. A green build on SQLite would therefore prove nothing
 #  about the integrity rules that protect enrolments and payments.
 #
-#  It also uses no real credentials of any kind (§72). Every payment, OAuth and
+#  It uses no real credentials of any kind (§72). Every payment, OAuth and
 #  meeting call in the suite is faked.
+#
+#  Two conventions make failures diagnosable from the annotations API alone,
+#  without downloading the log archive:
+#
+#    • Composer runs with --no-scripts, and `artisan package:discover` is a
+#      separate, named step. Composer's post-autoload hook boots the application,
+#      so leaving it inside `composer install` means a broken bootstrap reports
+#      as an opaque "Install PHP dependencies" failure. Here the failure names
+#      the step that actually broke.
+#    • Steps that boot the application capture their output and re-emit the tail
+#      as a `::error::` annotation.
 #
 name: CI
 
@@ -25,8 +36,9 @@ on:
 permissions:
   contents: read
 
-# A new push to the same branch supersedes the run in flight. Migrations and
-# asset builds are minutes long, and a stale run's result is not actionable.
+# A new push to the same branch supersedes the run in flight. Dependency
+# resolution and migrations take minutes, and a stale run's result is not
+# actionable.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -35,18 +47,20 @@ env:
   # Single source for the toolchain versions, so the PHP used to run the tests
   # and the PHP used to run the analysis cannot drift apart.
   #
-  # Note: the `env` context is NOT available in `jobs.<job_id>.name` (GitHub
-  # allows only github/needs/strategy/matrix/vars/inputs there), so job names
+  # The `env` context is NOT available in `jobs.<job_id>.name` — GitHub allows
+  # only github, needs, strategy, matrix, vars and inputs there — so job names
   # below are literal strings. Referencing env in a job name is a workflow
   # validation error that fails the whole run before any job is created.
   PHP_VERSION: '8.4'
   NODE_VERSION: '22'
+  # Composer's post-autoload hook is run explicitly instead.
+  COMPOSER_NO_INTERACTION: '1'
 
 jobs:
   tests:
     name: Tests (MySQL 8)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     services:
       mysql:
@@ -64,14 +78,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ env.PHP_VERSION }}
           # Every one of these backs a real feature, and platform:doctor checks
-          # for them on the deployment host too — so CI failing here predicts a
+          # for them on the deployment host too — so a failure here predicts a
           # failure in production rather than being a CI-only concern.
           extensions: bcmath, intl, mbstring, curl, zip, gd, fileinfo, pdo, pdo_mysql, opcache
           coverage: none
@@ -84,22 +98,44 @@ jobs:
           cache: npm
 
       - name: Create the environment file
-        # `.env.testing` is committed and governs the test run; `.env` must still
-        # exist because Composer's post-autoload scripts and `artisan` bootstrap
-        # read it.
-        run: cp .env.example .env
+        # `.env.testing` is committed and governs the test run; `.env` must also
+        # exist because artisan bootstraps from it. Created BEFORE any composer
+        # step so nothing reads a half-populated environment.
+        run: |
+          cp .env.example .env
+          test -f .env.testing && echo ".env.testing present" || echo "::error::.env.testing is missing"
 
       - name: Install PHP dependencies
         run: |
           if [ -f composer.lock ]; then
-            composer install --no-interaction --prefer-dist --no-progress
+            composer install --prefer-dist --no-progress --no-scripts
           else
-            echo "::warning title=No composer.lock committed::Resolving versions from composer.json, so this build is not reproducible. Run 'composer update' on a machine with PHP and commit the lock file."
-            composer update --no-interaction --prefer-dist --no-progress
+            echo "::warning title=No composer.lock committed::Resolving versions from composer.json, so this build is not reproducible. Run 'composer update' where PHP is available and commit the lock file."
+            composer update --prefer-dist --no-progress --no-scripts
           fi
 
       - name: Generate the application key
         run: php artisan key:generate --force --ansi
+
+      - name: Discover packages
+        # The step composer's post-autoload hook would have run. Splitting it out
+        # means a boot failure is attributed here, by name.
+        run: php artisan package:discover --ansi
+
+      - name: Verify the application boots
+        # `artisan about` boots the kernel and loads every config file, provider
+        # and route file — the same code path every later step depends on.
+        run: |
+          set +e
+          out="$(php artisan about --only=environment,drivers 2>&1)"
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -ne 0 ]; then
+            detail="$(printf '%s' "$out" | tail -6 | tr '\n' ' ' | sed -e 's/%/%25/g')"
+            echo "::error title=artisan failed to boot::${detail}"
+            exit "$code"
+          fi
 
       - name: Install front-end dependencies
         run: npm ci --no-audit --no-fund
@@ -119,12 +155,13 @@ jobs:
 
       - name: Run the deployment health check
         # Reported, not gated: whether gd or zip is installed on a runner is a
-        # property of the runner. The exit code is asserted by PlatformDoctorTest.
+        # property of the runner. The exit code itself is asserted by
+        # tests/Feature/PlatformDoctorTest.php.
         run: php artisan platform:doctor --ansi || true
 
       - name: Run the test suite
-        # All four suites (Unit, Feature, Authorization, Payment). phpunit.xml
-        # sets failOnWarning, failOnRisky and failOnDeprecation, so a test that
+        # All four suites: Unit, Feature, Authorization, Payment. phpunit.xml sets
+        # failOnWarning, failOnRisky and failOnDeprecation, so a test that
         # silently asserts nothing fails the build rather than passing it (§72).
         run: vendor/bin/phpunit --colors=always --display-warnings --display-deprecations
 
@@ -135,7 +172,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -145,22 +182,38 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      - name: Install PHP dependencies
-        run: |
-          if [ -f composer.lock ]; then
-            composer install --no-interaction --prefer-dist --no-progress --no-scripts
-          else
-            composer update --no-interaction --prefer-dist --no-progress --no-scripts
-          fi
-          composer dump-autoload --no-interaction
-
       - name: Create the environment file
         run: cp .env.example .env
 
+      - name: Install PHP dependencies
+        run: |
+          if [ -f composer.lock ]; then
+            composer install --prefer-dist --no-progress --no-scripts
+          else
+            composer update --prefer-dist --no-progress --no-scripts
+          fi
+
       - name: Generate the application key
-        # Larastan boots the application to read its container bindings; a missing
-        # key makes that boot noisy in ways unrelated to the code under analysis.
+        # Larastan boots the application to read its container bindings; a
+        # missing key makes that boot noisy in ways unrelated to the code under
+        # analysis.
         run: php artisan key:generate --force --ansi
+
+      - name: Discover packages
+        run: php artisan package:discover --ansi
+
+      - name: Verify the application boots
+        run: |
+          set +e
+          out="$(php artisan about --only=environment 2>&1)"
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -ne 0 ]; then
+            detail="$(printf '%s' "$out" | tail -6 | tr '\n' ' ' | sed -e 's/%/%25/g')"
+            echo "::error title=artisan failed to boot::${detail}"
+            exit "$code"
+          fi
 
       - name: PHPStan (Larastan)
         # Blocking. See phpstan.neon for the level and the escalation plan.
@@ -173,7 +226,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -189,17 +242,21 @@ jobs:
 
       - name: Verify the committed build is current
         # ADR-13: compiled assets are committed because shared hosting has no
-        # Node runtime — the deploy step is `git pull`. That only holds if what
-        # is committed is what the source produces. Without this check, editing
-        # app.css and forgetting to rebuild ships a stale bundle, and the page
-        # renders with the old styles while the source looks correct.
+        # Node runtime — the deploy step is `git pull`. That only holds if what is
+        # committed is what the source produces. Without this check, editing
+        # app.css and forgetting to rebuild ships a stale bundle: the page renders
+        # with the old styles while the source looks correct, and nothing on the
+        # server indicates why.
         run: |
-          if [ -n "$(git status --porcelain public/build)" ]; then
-            echo "::error title=Committed assets are stale::public/build differs from a fresh build. Run 'npm run build' and commit the result."
-            git --no-pager diff --stat public/build
+          changed="$(git status --porcelain public/build)"
+          if [ -n "$changed" ]; then
+            echo "$changed"
+            git --no-pager diff --stat -- public/build || true
+            detail="$(printf '%s' "$changed" | head -8 | tr '\n' ';' | sed -e 's/%/%25/g')"
+            echo "::error title=Committed assets are stale::public/build differs from a fresh build. Run 'npm run build' and commit the result. Changed: ${detail}"
             exit 1
           fi
-          echo "public/build is up to date."
+          echo "public/build is up to date with resources/."
 
   style:
     name: Code style
@@ -208,7 +265,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -219,18 +276,20 @@ jobs:
           tools: composer:v2
 
       - name: Install PHP dependencies
+        # Pint only parses source; it never boots the application, so no
+        # environment or package discovery is needed here.
         run: |
           if [ -f composer.lock ]; then
-            composer install --no-interaction --prefer-dist --no-progress --no-scripts
+            composer install --prefer-dist --no-progress --no-scripts
           else
-            composer update --no-interaction --prefer-dist --no-progress --no-scripts
+            composer update --prefer-dist --no-progress --no-scripts
           fi
 
       - name: Pint
         # Non-blocking until the tree has been normalised once with
         # `vendor/bin/pint` on a machine that has PHP. Formatting must never be
         # the reason a phase cannot ship, but it must also never be silently
-        # switched off — so the diff is printed and the step is flipped to
+        # switched off — so the output is kept and this step is flipped to
         # blocking immediately after that first normalisation pass.
         continue-on-error: true
         run: vendor/bin/pint --test -v

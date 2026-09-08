@@ -593,15 +593,27 @@ final class PlatformDoctor extends Command
         }
     }
 
+    /**
+     * Count migrations on disk that have not been run.
+     *
+     * Resolved through the `migration.repository` / `migrator` container bindings
+     * rather than by class name: Laravel registers those two as string-keyed
+     * singletons and does not alias the MigrationRepositoryInterface, so
+     * `app(MigrationRepositoryInterface::class)` would throw a
+     * BindingResolutionException — and a health check that crashes is worse than
+     * no health check at all.
+     */
     private function pendingMigrationCount(): int
     {
-        $repository = app(\Illuminate\Database\Migrations\MigrationRepositoryInterface::class);
-        $migrator = app(\Illuminate\Database\Migrations\Migrator::class);
+        /** @var \Illuminate\Database\Migrations\MigrationRepositoryInterface $repository */
+        $repository = app('migration.repository');
+
+        /** @var \Illuminate\Database\Migrations\Migrator $migrator */
+        $migrator = app('migrator');
 
         $files = $migrator->getMigrationFiles(database_path('migrations'));
-        $ran = $repository->getRan();
 
-        return count(array_diff(array_keys($files), $ran));
+        return count(array_diff(array_keys($files), $repository->getRan()));
     }
 
     /**
