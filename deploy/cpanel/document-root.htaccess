@@ -1,0 +1,127 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  public_html/.htaccess — cPanel document root
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  Use this ONLY if the document root holds the contents of the Laravel
+#  `public/` directory (deployment option (b) in SETUP.md §3.1). If you pointed
+#  the domain's document root at `eduplatform/public` instead, the framework's
+#  own public/.htaccess already handles rewriting and you do not need this file —
+#  adding it would duplicate the rewrite rules.
+#
+#  Requires mod_rewrite and AllowOverride All. On a host where AllowOverride is
+#  None, nothing in this file takes effect and every route except `/` will 404.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Honour the proxy's original protocol. Behind an SSL terminator Apache sees
+    # plain HTTP and would otherwise redirect an HTTPS request to HTTP.
+    RewriteCond %{HTTP:X-Forwarded-Proto} =https
+    RewriteRule ^ - [E=HTTPS:on]
+
+    # Redirect trailing slashes to the canonical form, but never touch a real
+    # directory and never touch an asset under /build.
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
+
+    # Serve real files and directories directly; send everything else to the
+    # front controller. This is what makes /admin/students/42 work without a
+    # physical file at that path.
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Deny access to anything that must never be served
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  Defence in depth. In a correct deployment (SETUP.md §3.1) none of these paths
+#  exist under the document root at all — this catches the layout that went wrong,
+#  which is the layout that leaks .env and student records.
+#
+#  `platform:doctor` and the curl checks in deploy/cpanel/README.md verify this
+#  from outside the server, which is the only test that actually counts.
+#
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    # Dotfiles and dot-directories: .env, .git, .htpasswd
+    RewriteRule (^|/)\.(?!well-known) - [F]
+
+    # Never serve the framework's own directories, even if a deploy put them here.
+    RewriteRule ^(app|bootstrap|config|database|resources|routes|storage|tests|vendor|deploy|docs)(/|$) - [F]
+
+    # Never serve a compiled Blade template or a log.
+    RewriteRule \.(log|sql|sql\.gz|sqlite|bak|old|swp|dist|lock|neon|json\.lock)$ - [F]
+</IfModule>
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Cache built assets
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  Filenames are content-hashed by Vite (public/build/assets/app-<hash>.css), so
+#  an immutable year-long cache is safe: a new build produces a new filename
+#  rather than overwriting the old one. This matters most for students on metered
+#  mobile connections, who otherwise re-download the stylesheet on every page.
+#
+#  The manifest itself must NOT be cached — a stale manifest would reference
+#  filenames from a previous build.
+#
+<IfModule mod_expires.c>
+    ExpiresActive On
+
+    <FilesMatch "\.(css|js|woff2?|ttf|otf|eot)$">
+        ExpiresDefault "access plus 1 year"
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+
+    <FilesMatch "\.(jpg|jpeg|png|gif|webp|avif|svg|ico)$">
+        ExpiresDefault "access plus 1 month"
+    </FilesMatch>
+
+    <FilesMatch "manifest\.json$">
+        ExpiresDefault "access plus 0 seconds"
+        Header set Cache-Control "no-store, must-revalidate"
+    </FilesMatch>
+</IfModule>
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Compression
+# ─────────────────────────────────────────────────────────────────────────────
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/css text/xml
+    AddOutputFilterByType DEFLATE application/javascript application/json
+    AddOutputFilterByType DEFLATE application/xml application/rss+xml
+    AddOutputFilterByType DEFLATE image/svg+xml font/woff font/woff2
+</IfModule>
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Upload limits
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  These must be at least as large as the PHP directives of the same name, or
+#  Apache rejects a course-material upload with a bare 413 before PHP ever sees
+#  it — an error with no message the user can act on. Keep them in step with
+#  config('platform.files.max_upload_kb').
+#
+<IfModule mod_php.c>
+    php_value upload_max_filesize 20M
+    php_value post_max_size 25M
+    php_value memory_limit 256M
+    php_value max_execution_time 120
+</IfModule>
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Directory listing off
+# ─────────────────────────────────────────────────────────────────────────────
+Options -Indexes
+
+# Character set must be explicit. Without it, Apache guesses, and a Yoruba or
+# Igbo name with diacritics can be served as windows-1252 and arrive mangled.
+AddDefaultCharset UTF-8

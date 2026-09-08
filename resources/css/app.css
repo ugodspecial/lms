@@ -1,0 +1,268 @@
+@import 'tailwindcss';
+
+/*
+ * Class-based dark mode: an administrator portal viewed at 2am and a student on
+ * a phone in daylight are the same app, so the theme is a `.dark` class on
+ * <html> rather than a media query the user cannot override.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source './../**/*.blade.php';
+@source './../**/*.js';
+@source '../../app/**/*.php';
+
+/*
+|--------------------------------------------------------------------------
+| Design tokens (§ docs/01, ADR-13)
+|--------------------------------------------------------------------------
+|
+| Every colour, radius and step of the type scale used anywhere in the nine
+| portal areas is defined here and nowhere else. A Blade file that contains a
+| hex literal is a bug: it cannot be re-themed, it will not adapt to dark mode,
+| and it silently diverges from the tokens on the next screen.
+|
+| These tokens are compiled by Vite at build time and committed as
+| /public/build (ADR-13), because shared cPanel hosting has no Node runtime —
+| the deploy step is `git pull`, not `npm install`.
+|
+*/
+
+@theme {
+    /* ---- Typography -------------------------------------------------- */
+    /*
+     * A system stack, deliberately. Loading a webfont from a CDN adds a
+     * round-trip and a third-party dependency to every page a student reads,
+     * and on a metered mobile connection in Lagos that cost is real. The stack
+     * still resolves to a clean, legible face on every platform.
+     */
+    --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+        Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
+    --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+    /* Modular type scale (1.2 ratio) so a heading's size is a token, not a guess. */
+    --text-2xs: 0.6875rem;
+    --text-2xs--line-height: 1rem;
+
+    /* ---- Brand ------------------------------------------------------- */
+    /* Indigo-leaning primary: reads as institutional and calm, and holds
+     * contrast against white and against a dark surface without shifting. */
+    --color-brand-50: oklch(0.97 0.012 272);
+    --color-brand-100: oklch(0.94 0.026 272);
+    --color-brand-200: oklch(0.885 0.05 272);
+    --color-brand-300: oklch(0.81 0.082 272);
+    --color-brand-400: oklch(0.71 0.12 272);
+    --color-brand-500: oklch(0.62 0.155 272);
+    --color-brand-600: oklch(0.545 0.175 272);
+    --color-brand-700: oklch(0.475 0.165 272);
+    --color-brand-800: oklch(0.4 0.13 272);
+    --color-brand-900: oklch(0.34 0.1 272);
+    --color-brand-950: oklch(0.24 0.075 272);
+
+    /* ---- Accent ------------------------------------------------------ */
+    /* Teal, used for tutor/booking surfaces so a tutor's own portal is
+     * visually distinct from the admin area they occasionally visit. */
+    --color-accent-50: oklch(0.975 0.012 190);
+    --color-accent-100: oklch(0.945 0.028 190);
+    --color-accent-200: oklch(0.9 0.055 190);
+    --color-accent-300: oklch(0.83 0.085 190);
+    --color-accent-400: oklch(0.75 0.115 190);
+    --color-accent-500: oklch(0.68 0.13 190);
+    --color-accent-600: oklch(0.6 0.125 190);
+    --color-accent-700: oklch(0.51 0.105 190);
+    --color-accent-800: oklch(0.43 0.082 190);
+    --color-accent-900: oklch(0.37 0.062 190);
+    --color-accent-950: oklch(0.27 0.045 190);
+
+    /* ---- Semantic status --------------------------------------------- */
+    /*
+     * Status colour is meaning, not decoration. These four are the only
+     * permitted ways to signal outcome — a green badge always means "safe to
+     * proceed", a red one always means "this will fail or has failed". Mixing
+     * them would teach users to ignore colour, which on a payment screen is a
+     * real hazard.
+     */
+    --color-success-50: oklch(0.97 0.02 152);
+    --color-success-100: oklch(0.935 0.045 152);
+    --color-success-500: oklch(0.65 0.16 152);
+    --color-success-600: oklch(0.575 0.155 152);
+    --color-success-700: oklch(0.48 0.13 152);
+    --color-success-900: oklch(0.33 0.08 152);
+
+    --color-warning-50: oklch(0.975 0.028 88);
+    --color-warning-100: oklch(0.945 0.062 88);
+    --color-warning-500: oklch(0.77 0.17 76);
+    --color-warning-600: oklch(0.68 0.165 62);
+    --color-warning-700: oklch(0.565 0.145 55);
+    --color-warning-900: oklch(0.39 0.085 55);
+
+    --color-danger-50: oklch(0.972 0.015 22);
+    --color-danger-100: oklch(0.94 0.038 22);
+    --color-danger-500: oklch(0.635 0.21 25);
+    --color-danger-600: oklch(0.575 0.225 26);
+    --color-danger-700: oklch(0.5 0.2 26);
+    --color-danger-900: oklch(0.36 0.13 25);
+
+    --color-info-50: oklch(0.972 0.014 235);
+    --color-info-100: oklch(0.94 0.034 235);
+    --color-info-500: oklch(0.66 0.14 235);
+    --color-info-600: oklch(0.58 0.155 240);
+    --color-info-700: oklch(0.5 0.14 243);
+    --color-info-900: oklch(0.35 0.085 245);
+
+    /* ---- Neutral surfaces -------------------------------------------- */
+    /* Slightly cool grey. A pure #fff page at full brightness is harsh for a
+     * student reading for an hour; surface steps give depth without shadows. */
+    --color-neutral-25: oklch(0.995 0.002 265);
+    --color-neutral-50: oklch(0.985 0.003 265);
+    --color-neutral-100: oklch(0.968 0.005 265);
+    --color-neutral-200: oklch(0.928 0.007 265);
+    --color-neutral-300: oklch(0.872 0.01 265);
+    --color-neutral-400: oklch(0.71 0.015 265);
+    --color-neutral-500: oklch(0.6 0.017 265);
+    --color-neutral-600: oklch(0.51 0.018 265);
+    --color-neutral-700: oklch(0.42 0.017 265);
+    --color-neutral-800: oklch(0.32 0.014 265);
+    --color-neutral-900: oklch(0.24 0.012 265);
+    --color-neutral-950: oklch(0.17 0.01 265);
+
+    /* ---- Radius ------------------------------------------------------ */
+    /* Cards and sheets are rounder than controls; a token per purpose keeps a
+     * new component from inventing its own corner. */
+    --radius-xs: 0.1875rem;
+    --radius-sm: 0.3125rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.6875rem;
+    --radius-xl: 0.875rem;
+    --radius-2xl: 1.25rem;
+    --radius-3xl: 1.75rem;
+
+    /* ---- Shadows ----------------------------------------------------- */
+    /* Low-opacity, cool-tinted. Elevation is a hint, not a decoration. */
+    --shadow-2xs: 0 1px 2px 0 oklch(0.24 0.012 265 / 0.04);
+    --shadow-xs: 0 1px 2px 0 oklch(0.24 0.012 265 / 0.06);
+    --shadow-sm: 0 1px 3px 0 oklch(0.24 0.012 265 / 0.08), 0 1px 2px -1px oklch(0.24 0.012 265 / 0.08);
+    --shadow-md: 0 4px 6px -1px oklch(0.24 0.012 265 / 0.08), 0 2px 4px -2px oklch(0.24 0.012 265 / 0.06);
+    --shadow-lg: 0 10px 15px -3px oklch(0.24 0.012 265 / 0.09), 0 4px 6px -4px oklch(0.24 0.012 265 / 0.06);
+    --shadow-xl: 0 20px 25px -5px oklch(0.24 0.012 265 / 0.1), 0 8px 10px -6px oklch(0.24 0.012 265 / 0.06);
+
+    /* ---- Motion ------------------------------------------------------ */
+    /* Fast and short. A 300ms transition on a grade submission makes the
+     * platform feel slower than it is. */
+    --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+    --default-transition-duration: 150ms;
+
+    /* ---- Layout ------------------------------------------------------ */
+    /* Sidebar width is a token because the admin and tutor areas must align
+     * their content columns even though their navs differ. */
+    --spacing-sidebar: 16rem;
+    --spacing-sidebar-collapsed: 4.5rem;
+    --spacing-header: 4rem;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Semantic aliases
+|--------------------------------------------------------------------------
+|
+| Components reference `surface`, `border-default` and `text-primary` — never a
+| raw palette step. This indirection is what makes dark mode a two-line change
+| rather than a rewrite of every Blade file, and it keeps the palette free to be
+| re-tuned per deployment without touching a component.
+|
+*/
+
+@layer base {
+    :root {
+        --surface-page: var(--color-neutral-50);
+        --surface-raised: var(--color-neutral-25);
+        --surface-sunken: var(--color-neutral-100);
+        --surface-inverse: var(--color-neutral-900);
+        --border-default: var(--color-neutral-200);
+        --border-strong: var(--color-neutral-300);
+        --text-primary: var(--color-neutral-900);
+        --text-secondary: var(--color-neutral-600);
+        --text-muted: var(--color-neutral-500);
+        --text-inverse: var(--color-neutral-25);
+        --ring-focus: var(--color-brand-500);
+    }
+
+    .dark {
+        --surface-page: var(--color-neutral-950);
+        --surface-raised: var(--color-neutral-900);
+        --surface-sunken: var(--color-neutral-950);
+        --surface-inverse: var(--color-neutral-100);
+        --border-default: var(--color-neutral-800);
+        --border-strong: var(--color-neutral-700);
+        --text-primary: var(--color-neutral-100);
+        --text-secondary: var(--color-neutral-400);
+        --text-muted: var(--color-neutral-500);
+        --text-inverse: var(--color-neutral-950);
+        --ring-focus: var(--color-brand-400);
+    }
+
+    html {
+        @apply antialiased;
+        text-rendering: optimizeLegibility;
+    }
+
+    body {
+        background-color: var(--surface-page);
+        color: var(--text-primary);
+    }
+
+    /*
+     * A visible focus ring is not optional: a parent navigating a results page
+     * by keyboard must be able to see where they are. Removing the outline
+     * without a replacement would be an accessibility regression.
+     */
+    :focus-visible {
+        outline: 2px solid var(--ring-focus);
+        outline-offset: 2px;
+    }
+
+    /*
+     * Honour the user's own motion preference. Vestibular sensitivity is not
+     * rare, and an animated dashboard can make the platform unusable for that
+     * person rather than merely annoying.
+     */
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
+}
+
+@utility surface-page {
+    background-color: var(--surface-page);
+}
+
+@utility surface-raised {
+    background-color: var(--surface-raised);
+}
+
+@utility surface-sunken {
+    background-color: var(--surface-sunken);
+}
+
+@utility border-default {
+    border-color: var(--border-default);
+}
+
+@utility border-strong {
+    border-color: var(--border-strong);
+}
+
+@utility text-secondary {
+    color: var(--text-secondary);
+}
+
+@utility text-muted {
+    color: var(--text-muted);
+}

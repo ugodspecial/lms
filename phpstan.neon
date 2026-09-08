@@ -1,0 +1,59 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Static analysis (Larastan)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  Why this runs in CI at all: the platform holds money and children's records.
+#  A `null` reaching `Money::of()`, or an `int` reaching a `string` parameter,
+#  is not a cosmetic defect — it is a wrong invoice or a broken authorization
+#  check. Static analysis catches that class of bug before a test has to be
+#  written for it.
+#
+#  Tests are deliberately NOT analysed. They are verified by being executed,
+#  which is a strictly stronger signal, and analysing them mostly produces noise
+#  about assertion helpers and PHPUnit generics.
+#
+#  Level escalation plan — the level is raised only when the code beneath it is
+#  clean, so the gate is never lowered just to make a build pass:
+#
+#     Phase 0–1   level 5   (current)
+#     Phase 2–5   level 7   once the domain services exist and are fully typed
+#     Phase 6+    level 9   before go-live, with a committed baseline for any
+#                           legacy code that cannot be fixed immediately
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+parameters:
+    level: 5
+
+    paths:
+        - app
+        - config
+        - routes
+        - database
+
+    # `config()` and `env()` legitimately return mixed. Every read site casts
+    # explicitly, and that casting is the discipline being enforced here rather
+    # than suppressed.
+    treatPhpDocTypesAsCertain: false
+
+    # An ignore rule that stops matching (because the code was fixed) must not
+    # itself break the build — otherwise the safe move becomes deleting the rule
+    # and ignoring the real error underneath it.
+    reportUnmatchedIgnoredErrors: false
+
+    excludePaths:
+        analyseAndScan:
+            # Compiled views are generated output, not source.
+            - storage/framework/views
+            - bootstrap/cache
+
+    ignoreErrors:
+        # bcmath is guarded by function_exists() at every call site because it is
+        # not guaranteed to be installed on shared hosting; PHPStan cannot see
+        # through that guard.
+        -
+            message: '#^Function bc(mul|div|add|sub) not found#'
+            path: app/Domain/Commerce/ValueObjects/*.php

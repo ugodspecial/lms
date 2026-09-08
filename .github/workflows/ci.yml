@@ -1,0 +1,231 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Continuous integration
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  This is the verification gate for every phase (docs/10). A phase is not
+#  complete when the code is written; it is complete when this is green.
+#
+#  It runs against MySQL, never SQLite. The schema depends on FULLTEXT indexes
+#  and enforced CHECK constraints (docs/04 §0) — for example the
+#  "exactly one entitlement target" rule is a CHECK constraint, and SQLite
+#  silently ignores it. A green build on SQLite would therefore prove nothing
+#  about the integrity rules that protect enrolments and payments.
+#
+#  It also uses no real credentials of any kind (§72). Every payment, OAuth and
+#  meeting call in the suite is faked.
+#
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to the same branch supersedes the run in flight. Migrations and
+# asset builds are minutes long, and a stale run's result is not actionable.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Kept here rather than repeated per step so the PHP version used by the
+  # toolchain and by the test matrix cannot drift apart.
+  PHP_VERSION: '8.4'
+  NODE_VERSION: '22'
+
+jobs:
+  tests:
+    name: Tests (PHP ${{ env.PHP_VERSION }}, MySQL 8)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: eduplatform_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          # Every one of these backs a real feature, and platform:doctor checks
+          # for them on the deployment host too — so CI failing here predicts a
+          # failure in production rather than being a CI-only concern.
+          extensions: bcmath, intl, mbstring, curl, zip, gd, fileinfo, pdo, pdo_mysql, opcache
+          coverage: none
+          tools: composer:v2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Create the environment file
+        # `.env.testing` is committed and governs the test run; `.env` must still
+        # exist because Composer's post-autoload scripts and `artisan` bootstrap
+        # read it.
+        run: cp .env.example .env
+
+      - name: Install PHP dependencies
+        run: |
+          if [ -f composer.lock ]; then
+            composer install --no-interaction --prefer-dist --no-progress
+          else
+            echo "::warning title=No composer.lock committed::Resolving versions from composer.json, so this build is not reproducible. Run 'composer update' on a machine with PHP and commit the lock file."
+            composer update --no-interaction --prefer-dist --no-progress
+          fi
+
+      - name: Generate the application key
+        run: php artisan key:generate --force --ansi
+
+      - name: Install front-end dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run migrations against a clean database
+        # `--force` is required because the environment is not `local`. A
+        # migration that fails here is a migration that will fail on the
+        # operator's first deploy.
+        run: |
+          php artisan config:clear
+          php artisan migrate:fresh --seed --force --ansi
+
+      - name: Report the schedule that cron will drive
+        # Not a gate — a record. Shared hosting has no supervisor, so what the
+        # single cron entry actually runs is worth having in every build log.
+        run: php artisan schedule:list --ansi || true
+
+      - name: Run the deployment health check
+        # Reported, not gated: whether gd or zip is installed on a runner is a
+        # property of the runner. The exit code is asserted by PlatformDoctorTest.
+        run: php artisan platform:doctor --ansi || true
+
+      - name: Run the test suite
+        # All four suites (Unit, Feature, Authorization, Payment). phpunit.xml
+        # sets failOnWarning, failOnRisky and failOnDeprecation, so a test that
+        # silently asserts nothing fails the build rather than passing it (§72).
+        run: vendor/bin/phpunit --colors=always --display-warnings --display-deprecations
+
+  analysis:
+    name: Static analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: bcmath, intl, mbstring, curl, zip, gd, fileinfo, pdo, pdo_mysql
+          coverage: none
+          tools: composer:v2
+
+      - name: Install PHP dependencies
+        run: |
+          if [ -f composer.lock ]; then
+            composer install --no-interaction --prefer-dist --no-progress --no-scripts
+          else
+            composer update --no-interaction --prefer-dist --no-progress --no-scripts
+          fi
+          composer dump-autoload --no-interaction
+
+      - name: Create the environment file
+        run: cp .env.example .env
+
+      - name: Generate the application key
+        # Larastan boots the application to read its container bindings; a missing
+        # key makes that boot noisy in ways unrelated to the code under analysis.
+        run: php artisan key:generate --force --ansi
+
+      - name: PHPStan (Larastan)
+        # Blocking. See phpstan.neon for the level and the escalation plan.
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G --error-format=github
+
+  assets:
+    name: Front-end assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install front-end dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Verify the committed build is current
+        # ADR-13: compiled assets are committed because shared hosting has no
+        # Node runtime — the deploy step is `git pull`. That only holds if what
+        # is committed is what the source produces. Without this check, editing
+        # app.css and forgetting to rebuild ships a stale bundle, and the page
+        # renders with the old styles while the source looks correct.
+        run: |
+          if [ -n "$(git status --porcelain public/build)" ]; then
+            echo "::error title=Committed assets are stale::public/build differs from a fresh build. Run 'npm run build' and commit the result."
+            git --no-pager diff --stat public/build
+            exit 1
+          fi
+          echo "public/build is up to date."
+
+  style:
+    name: Code style
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: bcmath, intl, mbstring, curl, zip, gd, fileinfo, pdo, pdo_mysql
+          coverage: none
+          tools: composer:v2, pint
+
+      - name: Install PHP dependencies
+        run: |
+          if [ -f composer.lock ]; then
+            composer install --no-interaction --prefer-dist --no-progress --no-scripts
+          else
+            composer update --no-interaction --prefer-dist --no-progress --no-scripts
+          fi
+
+      - name: Pint
+        # Non-blocking until the tree has been normalised once with
+        # `vendor/bin/pint` on a machine that has PHP. Formatting must never be
+        # the reason a phase cannot ship, but it must also never be silently
+        # switched off — so the diff is printed and the step is flipped to
+        # blocking immediately after that first normalisation pass.
+        continue-on-error: true
+        run: vendor/bin/pint --test --format=github

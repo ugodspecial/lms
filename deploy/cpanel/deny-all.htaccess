@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  deny-all.htaccess — place as `.htaccess` in any directory that must not be
+#  served by the web server.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  THIS IS A MITIGATION, NOT A FIX.
+#
+#  In a correct deployment (SETUP.md §3.1) the Laravel root — and therefore
+#  storage/, .env and vendor/ — sits OUTSIDE the document root, and Apache never
+#  has an opinion about them because they are not under it.
+#
+#  Use this file only when the host will not let you move the document root and
+#  the Laravel root is unavoidably web-exposed. In that situation this file is
+#  the difference between a working platform and a public download of every
+#  student record you hold.
+#
+#  Requires AllowOverride All. If AllowOverride is None, THIS FILE DOES NOTHING —
+#  silently. Verify from outside the server, not by reading the file:
+#
+#      curl -I https://your-domain.test/.env
+#      curl -I https://your-domain.test/storage/app/private/
+#
+#  Both must return 403 or 404. A 200 means the mitigation is not in force.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Apache 2.4
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+
+# Apache 2.2 (still common on older shared hosting)
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+    Satisfy All
+</IfModule>
+
+# Belt and braces: some hosts run LiteSpeed or a proxy that honours the older
+# syntax only, and a directory that is denied by one mechanism but not the other
+# is exactly the failure mode this file exists to prevent.
+<FilesMatch ".*">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Stop Apache from serving a directory index while it decides.
+Options -Indexes -ExecCGI
+
+# Never let a stray handler execute anything here. A file uploaded as
+# `notes.jpg` that is really PHP must not be handed to the PHP handler.
+<IfModule mod_mime.c>
+    RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phar .cgi .pl .py .sh
+    RemoveType .php .phtml .php3 .php4 .php5 .php7 .php8 .phar
+</IfModule>
+
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>

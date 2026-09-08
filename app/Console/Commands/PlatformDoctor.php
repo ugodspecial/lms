@@ -1,0 +1,644 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Console\Commands;
+
+use App\Http\Middleware\EnsureIntegrationConfigured;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
+use Throwable;
+
+/**
+ * Deployment health check (§69, §75, Phase 0 exit gate).
+ *
+ * Shared cPanel hosting fails in boring, silent ways: a missing PHP extension, a
+ * storage directory owned by the wrong user, a `.env` copied from the example
+ * and never edited, `APP_DEBUG=true` left on in production. None of these break
+ * the deploy; they break a parent's payment three days later.
+ *
+ * This command turns "is this deployment actually healthy?" into one command an
+ * operator can run, and into a CI gate that fails the build. It reports facts it
+ * observed, never a stored expectation — so it cannot drift out of date the way
+ * a written checklist does.
+ *
+ * Exit code is non-zero if any check FAILED, which is what makes it usable as a
+ * gate rather than as decoration.
+ */
+final class PlatformDoctor extends Command
+{
+    protected $signature = 'platform:doctor
+                            {--json : Emit machine-readable results instead of a table}
+                            {--skip-database : Do not attempt a database connection}
+                            {--only= : Run a single check group (php, env, storage, database, runtime, assets, integrations)}';
+
+    protected $description = 'Verify PHP, environment, storage, database, queue, assets and integration readiness for this deployment';
+
+    /** @var list<array{group: string, label: string, status: 'pass'|'warn'|'fail', detail: string}> */
+    private array $results = [];
+
+    private string $group = 'general';
+
+    public function handle(EnsureIntegrationConfigured $integrations): int
+    {
+        $only = $this->option('only');
+
+        $groups = [
+            'php' => fn () => $this->checkPhp(),
+            'env' => fn () => $this->checkEnvironment(),
+            'storage' => fn () => $this->checkStorage(),
+            'database' => fn () => $this->checkDatabase(),
+            'runtime' => fn () => $this->checkRuntime(),
+            'assets' => fn () => $this->checkAssets(),
+            'integrations' => fn () => $this->checkIntegrations($integrations),
+        ];
+
+        foreach ($groups as $name => $check) {
+            if (is_string($only) && $only !== '' && $only !== $name) {
+                continue;
+            }
+
+            $this->group = $name;
+            $check();
+        }
+
+        if ($this->option('json')) {
+            $this->line((string) json_encode([
+                'summary' => $this->summary(),
+                'checks' => $this->results,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+            return $this->exitCode();
+        }
+
+        $this->renderTable();
+
+        return $this->exitCode();
+    }
+
+    // ── PHP ─────────────────────────────────────────────────────────────────
+
+    private function checkPhp(): void
+    {
+        $this->pass('PHP version', PHP_VERSION);
+
+        // pdo_mysql is the whole application; mbstring and openssl are used by
+        // auth and by every string operation on non-ASCII names, which in a
+        // Nigerian student population is most of them.
+        $required = [
+            'pdo' => 'Database access',
+            'pdo_mysql' => 'MySQL driver',
+            'mbstring' => 'Multibyte strings (names in Yoruba, Igbo, Hausa)',
+            'openssl' => 'Encryption, hashing, HTTPS',
+            'json' => 'API and webhook payloads',
+            'ctype' => 'Validation',
+            'tokenizer' => 'Blade compilation',
+            'xml' => 'XML handling',
+            'curl' => 'Paystack, Zoom, Google API calls',
+            'fileinfo' => 'Upload MIME detection — blocks a renamed .php upload',
+            'bcmath' => 'Exact money arithmetic (ADR-02)',
+            'zip' => 'Backup and bulk export downloads',
+            'gd' => 'Certificate and thumbnail generation',
+        ];
+
+        foreach ($required as $extension => $reason) {
+            extension_loaded($extension)
+                ? $this->pass("ext-{$extension}", $reason)
+                : $this->fail("ext-{$extension}", "Missing. Needed for: {$reason}. Enable it in cPanel → Select PHP Version.");
+        }
+
+        foreach (['intl', 'exif', 'imagick'] as $optional) {
+            if (! extension_loaded($optional)) {
+                $this->warn("ext-{$optional}", 'Not installed. Optional, but some features will be reduced.');
+            }
+        }
+
+        foreach ([
+            'memory_limit' => ['256M', 'Composer, imports and PDF generation exceed 128M.'],
+            'max_execution_time' => ['60', 'Bulk enrolment and report generation are slow on shared hosting.'],
+            'upload_max_filesize' => ['20M', 'Course materials and tutor portfolios are larger than 2M.'],
+            'post_max_size' => ['25M', 'Must exceed upload_max_filesize or large uploads fail silently.'],
+        ] as $directive => [$minimum, $why]) {
+            $actual = (string) ini_get($directive);
+            $actualBytes = $this->toBytes($actual);
+            $minimumBytes = $this->toBytes($minimum);
+
+            // A time directive is in seconds, not bytes; -1 means unlimited.
+            if ($directive === 'max_execution_time') {
+                $ok = $actual === '-1' || $actual === '0' || (int) $actual >= (int) $minimum;
+            } else {
+                $ok = $actualBytes === -1 || $actualBytes >= $minimumBytes;
+            }
+
+            $ok
+                ? $this->pass($directive, $actual)
+                : $this->warn($directive, "{$actual}, expected at least {$minimum}. {$why}");
+        }
+    }
+
+    // ── Environment ─────────────────────────────────────────────────────────
+
+    private function checkEnvironment(): void
+    {
+        if (! File::exists(base_path('.env'))) {
+            $this->fail('.env', 'Missing. Copy .env.example to .env and fill in the values.');
+        } else {
+            $this->pass('.env', 'Present');
+        }
+
+        $key = (string) config('app.key');
+
+        match (true) {
+            $key === '' => $this->fail('APP_KEY', 'Empty. Run: php artisan key:generate'),
+            str_starts_with($key, 'base64:dGVzdGluZ2tleXRoYXQ') => $this->fail(
+                'APP_KEY',
+                'Still the value from phpunit.xml. Run: php artisan key:generate'
+            ),
+            default => $this->pass('APP_KEY', 'Set'),
+        };
+
+        $env = app()->environment();
+        $this->pass('APP_ENV', $env);
+
+        $isProduction = $env === 'production';
+
+        // The single most damaging misconfiguration on shared hosting: debug on
+        // in production renders stack traces, database credentials and student
+        // data to anyone who triggers an error (§76).
+        $isProduction && config('app.debug')
+            ? $this->fail('APP_DEBUG', 'true in production exposes stack traces, credentials and student data. Set APP_DEBUG=false.')
+            : $this->pass('APP_DEBUG', var_export((bool) config('app.debug'), true));
+
+        $url = (string) config('app.url');
+
+        match (true) {
+            $url === '' => $this->fail('APP_URL', 'Empty. Set it to the real public URL, or OAuth redirects and emails will be wrong.'),
+            str_contains($url, 'localhost') && $isProduction => $this->fail(
+                'APP_URL',
+                "{$url} in production. OAuth callbacks, password-reset links and Paystack redirects all depend on it."
+            ),
+            default => $this->pass('APP_URL', $url),
+        };
+
+        // §74: demo accounts in production hand an attacker a real
+        // administrator session for the price of a guess.
+        if (config('platform.demo_accounts.enabled')) {
+            $isProduction
+                ? $this->fail('PLATFORM_DEMO_ACCOUNTS', 'Enabled in production. Set it to false.')
+                : $this->warn('PLATFORM_DEMO_ACCOUNTS', 'Enabled. Correct for local development only.');
+        } else {
+            $this->pass('PLATFORM_DEMO_ACCOUNTS', 'Disabled');
+        }
+
+        // §62 / ADR-08: storage timezone must remain UTC or every stored instant
+        // becomes ambiguous across daylight-saving boundaries.
+        (string) config('app.timezone') === 'UTC'
+            ? $this->pass('app.timezone', 'UTC (storage timezone, correct)')
+            : $this->fail('app.timezone', (string) config('app.timezone').' — must stay UTC. Display timezone is platform.timezone.default instead.');
+
+        $displayTimezone = (string) config('platform.timezone.default');
+
+        in_array($displayTimezone, \DateTimeZone::listIdentifiers(), true)
+            ? $this->pass('platform.timezone.default', $displayTimezone)
+            : $this->fail('platform.timezone.default', "{$displayTimezone} is not a valid IANA timezone.");
+
+        $currency = (string) config('platform.currency');
+
+        in_array($currency, \App\Domain\Commerce\ValueObjects\Currency::available(), true)
+            ? $this->pass('platform.currency', $currency)
+            : $this->fail('platform.currency', "{$currency} is not defined in config/platform.php 'currencies'.");
+    }
+
+    // ── Storage ─────────────────────────────────────────────────────────────
+
+    private function checkStorage(): void
+    {
+        // Writability is tested by actually writing, not by stat(). On cPanel a
+        // directory can be 0775 and still be owned by a different user than the
+        // PHP process, which is the failure that only a real write reveals.
+        $directories = [
+            'storage/app' => 'Uploaded files and exports',
+            'storage/app/public' => 'Publicly served files',
+            'storage/app/authenticated' => 'Login-required downloads (§59)',
+            'storage/app/restricted' => 'Certificates and protected product files (§59)',
+            'storage/framework/cache' => 'Compiled config, routes and cache',
+            'storage/framework/sessions' => 'File sessions, if used',
+            'storage/framework/views' => 'Compiled Blade templates',
+            'storage/logs' => 'Application, payment and audit logs',
+            'bootstrap/cache' => 'Cached services and packages',
+        ];
+
+        foreach ($directories as $relative => $purpose) {
+            $path = base_path($relative);
+
+            if (! File::isDirectory($path)) {
+                $this->fail($relative, "Missing. Create it (purpose: {$purpose}).");
+
+                continue;
+            }
+
+            $probe = $path.'/.doctor-probe';
+
+            try {
+                File::put($probe, (string) now()->timestamp);
+                File::delete($probe);
+                $this->pass($relative, "Writable — {$purpose}");
+            } catch (Throwable $e) {
+                $this->fail($relative, "Not writable by the PHP process ({$e->getMessage()}). Run: chown -R <cpanel user> {$relative} && chmod -R 775 {$relative}");
+            }
+        }
+
+        // storage/app/public must be reachable from the document root, or every
+        // "public" file 404s while appearing to upload successfully (§59).
+        $link = public_path('storage');
+
+        if (File::isDirectory($link) || File::exists($link)) {
+            $this->pass('public/storage', 'Linked');
+        } else {
+            $this->warn('public/storage', 'Not linked. Run: php artisan storage:link (required for public course thumbnails).');
+        }
+
+        // A log directory that cannot be pruned will eventually fill a shared
+        // hosting quota and take the whole site down.
+        $logFiles = File::glob(storage_path('logs/*.log')) ?: [];
+        $totalMb = array_sum(array_map(
+            fn (string $f): int => (int) (File::size($f) / 1_048_576),
+            $logFiles
+        ));
+
+        $totalMb > 500
+            ? $this->warn('storage/logs', count($logFiles)." files, ~{$totalMb} MB. Prune old logs; shared hosting quotas are small.")
+            : $this->pass('storage/logs', count($logFiles).' files, ~'.$totalMb.' MB');
+    }
+
+    // ── Database ────────────────────────────────────────────────────────────
+
+    private function checkDatabase(): void
+    {
+        if ($this->option('skip-database')) {
+            $this->warn('database', 'Skipped (--skip-database)');
+
+            return;
+        }
+
+        $connection = (string) config('database.default');
+
+        // Reported once, as either a pass or a failure — emitting both would let a
+        // caller reading the report find the pass first and miss the defect.
+        if ($connection === 'sqlite') {
+            $this->fail('DB_CONNECTION', 'sqlite is not supported: the schema uses FULLTEXT indexes and CHECK constraints (docs/04 §0).');
+
+            return;
+        }
+
+        $this->pass('DB_CONNECTION', $connection);
+
+        try {
+            DB::connection()->getPdo();
+        } catch (Throwable $e) {
+            $this->fail('database connection', $this->safeMessage($e));
+
+            return;
+        }
+
+        $this->pass('database connection', 'Connected');
+
+        try {
+            $serverVersion = DB::selectOne('SELECT VERSION() AS v');
+            $version = (string) ($serverVersion->v ?? 'unknown');
+
+            $this->pass('server version', $version);
+
+            // MySQL 8 / MariaDB 10.6 minimum: the schema relies on generated
+            // columns, CHECK constraint enforcement and utf8mb4 defaults.
+            if (str_contains(strtolower($version), 'mariadb')) {
+                $this->noteVersion($version, '10.6', 'MariaDB');
+            } else {
+                $this->noteVersion($version, '8.0', 'MySQL');
+            }
+
+            $collation = DB::selectOne("SELECT @@collation_database AS c");
+
+            str_contains((string) ($collation->c ?? ''), 'utf8mb4')
+                ? $this->pass('collation', (string) $collation->c)
+                : $this->fail('collation', (string) ($collation->c ?? 'unknown').' — must be utf8mb4_* or accented names and Yoruba/Igbo diacritics will corrupt.');
+        } catch (Throwable $e) {
+            $this->warn('server version', 'Could not read: '.$this->safeMessage($e));
+        }
+
+        try {
+            if (! Schema::hasTable('migrations')) {
+                $this->fail('migrations', 'No migrations table. Run: php artisan migrate --force');
+
+                return;
+            }
+
+            $pending = $this->pendingMigrationCount();
+
+            $pending > 0
+                ? $this->fail('migrations', "{$pending} pending. Run: php artisan migrate --force")
+                : $this->pass('migrations', 'Up to date');
+        } catch (Throwable $e) {
+            $this->fail('migrations', $this->safeMessage($e));
+        }
+    }
+
+    // ── Runtime drivers ─────────────────────────────────────────────────────
+
+    private function checkRuntime(): void
+    {
+        // §69 / ADR-14: these are the drivers shared hosting can actually run.
+        // redis is fine if present, but must never be *required*.
+        foreach ([
+            'QUEUE_CONNECTION' => ['queue.default', ['database', 'sync']],
+            'CACHE_STORE' => ['cache.default', ['database', 'file', 'array']],
+            'SESSION_DRIVER' => ['session.driver', ['database', 'file']],
+            'FILESYSTEM_DISK' => ['filesystems.default', ['local', 'public']],
+        ] as $label => [$configKey, $sharedHostingFriendly]) {
+            $value = (string) config($configKey);
+
+            in_array($value, $sharedHostingFriendly, true)
+                ? $this->pass($label, $value)
+                : $this->warn($label, "{$value} — works only if that service is actually available on this host.");
+        }
+
+        if ((string) config('queue.default') === 'database' && ! $this->option('skip-database')) {
+            Schema::hasTable('jobs')
+                ? $this->pass('jobs table', 'Present')
+                : $this->fail('jobs table', 'Missing. Run: php artisan migrate --force');
+        }
+
+        // A database queue with no worker running is the most common cause of
+        // "the platform accepted it but nothing happened".
+        $scheduleFile = base_path('deploy/cpanel/crontab.txt');
+
+        File::exists($scheduleFile)
+            ? $this->pass('cron instructions', 'deploy/cpanel/crontab.txt present')
+            : $this->warn('cron instructions', 'deploy/cpanel/crontab.txt missing — see SETUP.md for the required cron entry.');
+
+        // Without a worker, queued jobs (payment webhooks, emails, meeting
+        // provisioning) accumulate forever and are never processed.
+        try {
+            $oldest = DB::table('jobs')->orderBy('available_at')->value('available_at');
+
+            if ($oldest !== null && ((int) $oldest) < now()->subMinutes(15)->timestamp) {
+                $this->fail('queue worker', 'Jobs have been waiting more than 15 minutes. Start a worker: php artisan queue:work --stop-when-empty (via cron).');
+            } elseif ($oldest !== null) {
+                $this->pass('queue worker', 'Jobs present but recent');
+            } else {
+                $this->pass('queue', 'Empty — nothing waiting');
+            }
+        } catch (Throwable) {
+            // Table may not exist yet; checkDatabase already reported that.
+        }
+
+        $mailFrom = (string) config('mail.from.address');
+
+        match (true) {
+            $mailFrom === '' => $this->fail('MAIL_FROM_ADDRESS', 'Empty. Verification and password-reset emails cannot be sent.'),
+            str_contains($mailFrom, 'example.test') && app()->environment('production') => $this->warn(
+                'MAIL_FROM_ADDRESS',
+                "{$mailFrom} looks like a placeholder in production."
+            ),
+            default => $this->pass('MAIL_FROM_ADDRESS', $mailFrom),
+        };
+
+        $mailer = (string) config('mail.default');
+
+        $mailer === 'log' && app()->environment('production')
+            ? $this->fail('MAIL_MAILER', 'log in production means no email is ever delivered — verification and password reset silently do nothing.')
+            : $this->pass('MAIL_MAILER', $mailer);
+    }
+
+    // ── Built assets ────────────────────────────────────────────────────────
+
+    private function checkAssets(): void
+    {
+        // ADR-13: compiled assets are committed, because shared hosting has no
+        // Node runtime. If they are missing every page renders unstyled.
+        //
+        // Vite 6+ writes the manifest to build/.vite/manifest.json; earlier
+        // versions wrote build/manifest.json. Both are checked so a host running
+        // an older committed build is not reported as broken.
+        $manifest = collect([
+            public_path('build/.vite/manifest.json'),
+            public_path('build/manifest.json'),
+        ])->first(static fn (string $path): bool => File::exists($path));
+
+        if ($manifest === null) {
+            $this->fail('public/build manifest', 'Missing. Assets are committed to the repo (ADR-13) — run `npm run build` locally and commit, or restore them from git.');
+
+            return;
+        }
+
+        $this->pass('public/build manifest', str_replace(public_path('').'/', '', $manifest));
+
+        try {
+            /** @var array<string, array{file?: string}> $entries */
+            $entries = json_decode((string) File::get($manifest), true, 512, JSON_THROW_ON_ERROR) ?? [];
+
+            $missing = [];
+
+            foreach ($entries as $entry) {
+                if (isset($entry['file']) && ! File::exists(public_path('build/'.$entry['file']))) {
+                    $missing[] = (string) $entry['file'];
+                }
+            }
+
+            $missing === []
+                ? $this->pass('built assets', count($entries).' manifest entries, all files present')
+                : $this->fail('built assets', 'Manifest references missing files: '.implode(', ', $missing).'. Rebuild with `npm run build` and commit.');
+        } catch (Throwable $e) {
+            $this->fail('built assets', 'Manifest unreadable: '.$this->safeMessage($e));
+        }
+
+        File::exists(public_path('.htaccess'))
+            ? $this->pass('public/.htaccess', 'Present')
+            : $this->fail('public/.htaccess', 'Missing — pretty URLs will 404 on Apache shared hosting.');
+    }
+
+    // ── Integrations ────────────────────────────────────────────────────────
+
+    private function checkIntegrations(EnsureIntegrationConfigured $integrations): void
+    {
+        /** @var array<string, array<string, mixed>> $configured */
+        $configured = (array) config('platform.integrations', []);
+
+        foreach ($configured as $name => $config) {
+            $label = (string) ($config['label'] ?? $name);
+
+            $missing = $integrations->missingRequirements($name);
+
+            if ($missing === null) {
+                $this->pass($name, "{$label} — configured");
+
+                continue;
+            }
+
+            // Disabled on purpose is a valid state; the platform simply does not
+            // render the entry point (§63). Enabled-but-incomplete is a defect.
+            if ($missing['keys'] === []) {
+                $this->warn($name, "{$label} — disabled. See {$missing['docs']} to turn it on.");
+            } else {
+                $this->fail($name, "{$label} — enabled but missing: ".implode(', ', $missing['keys']).". See {$missing['docs']}.");
+            }
+        }
+
+        // §41: the secret key must never be reachable from a rendered page. This
+        // is asserted by a test too, but the operator should see it here.
+        $secret = (string) config('services.paystack.secret');
+
+        if ($secret !== '') {
+            $public = (string) config('services.paystack.public');
+
+            str_starts_with($secret, 'sk_')
+                ? $this->pass('paystack secret', 'Present and correctly prefixed (never sent to a browser)')
+                : $this->warn('paystack secret', 'Present but does not start with sk_ — verify it is the secret key, not the public one.');
+
+            if ($public !== '' && $public === $secret) {
+                $this->fail('paystack keys', 'Public and secret keys are identical. One of them is wrong.');
+            }
+        }
+    }
+
+    // ── Reporting ───────────────────────────────────────────────────────────
+
+    private function pass(string $label, string $detail): void
+    {
+        $this->results[] = ['group' => $this->group, 'label' => $label, 'status' => 'pass', 'detail' => $detail];
+    }
+
+    private function warn(string $label, string $detail): void
+    {
+        $this->results[] = ['group' => $this->group, 'label' => $label, 'status' => 'warn', 'detail' => $detail];
+    }
+
+    private function fail(string $label, string $detail): void
+    {
+        $this->results[] = ['group' => $this->group, 'label' => $label, 'status' => 'fail', 'detail' => $detail];
+    }
+
+    /** @return array{pass: int, warn: int, fail: int} */
+    private function summary(): array
+    {
+        return [
+            'pass' => count(array_filter($this->results, fn (array $r): bool => $r['status'] === 'pass')),
+            'warn' => count(array_filter($this->results, fn (array $r): bool => $r['status'] === 'warn')),
+            'fail' => count(array_filter($this->results, fn (array $r): bool => $r['status'] === 'fail')),
+        ];
+    }
+
+    private function exitCode(): int
+    {
+        // Warnings do not fail the build: a deployment without Zoom is a
+        // legitimate choice. Failures do, because every one of them means a
+        // feature will silently not work.
+        return $this->summary()['fail'] > 0 ? self::FAILURE : self::SUCCESS;
+    }
+
+    private function renderTable(): void
+    {
+        $this->newLine();
+        $this->components->title('Platform health check');
+
+        $summary = $this->summary();
+
+        $currentGroup = null;
+
+        foreach ($this->results as $result) {
+            if ($result['group'] !== $currentGroup) {
+                $currentGroup = $result['group'];
+                $this->newLine();
+                $this->components->twoColumnDetail('<fg=white;options=bold>'.strtoupper($currentGroup).'</>');
+            }
+
+            $marker = match ($result['status']) {
+                'pass' => '<fg=green>✔</>',
+                'warn' => '<fg=yellow>▲</>',
+                'fail' => '<fg=red>✖</>',
+            };
+
+            $this->line("  {$marker} <options=bold>{$result['label']}</>");
+            $this->line("      <fg=gray>{$result['detail']}</>");
+        }
+
+        $this->newLine();
+        $this->components->twoColumnDetail(
+            'Result',
+            sprintf(
+                '<fg=green>%d passed</>, <fg=yellow>%d warnings</>, <fg=red>%d failed</>',
+                $summary['pass'],
+                $summary['warn'],
+                $summary['fail']
+            )
+        );
+
+        if ($summary['fail'] > 0) {
+            $this->components->error('This deployment is not healthy. Fix every ✖ above before pointing real users at it.');
+        } elseif ($summary['warn'] > 0) {
+            $this->components->warn('Healthy, with warnings worth reviewing.');
+        } else {
+            $this->components->info('All checks passed.');
+        }
+
+        $this->newLine();
+    }
+
+    private function noteVersion(string $version, string $minimum, string $flavour): void
+    {
+        if (preg_match('/(\d+\.\d+)/', $version, $m) && version_compare($m[1], $minimum, '<')) {
+            $this->warn('server version', "{$flavour} {$version} is below the {$minimum} minimum for this schema.");
+        }
+    }
+
+    private function pendingMigrationCount(): int
+    {
+        $repository = app(\Illuminate\Database\Migrations\MigrationRepositoryInterface::class);
+        $migrator = app(\Illuminate\Database\Migrations\Migrator::class);
+
+        $files = $migrator->getMigrationFiles(database_path('migrations'));
+        $ran = $repository->getRan();
+
+        return count(array_diff(array_keys($files), $ran));
+    }
+
+    /**
+     * Convert an ini shorthand value ("256M") to bytes; -1 means unlimited.
+     */
+    private function toBytes(string $value): int
+    {
+        $value = trim($value);
+
+        if ($value === '' || $value === '-1') {
+            return -1;
+        }
+
+        $unit = strtolower(substr($value, -1));
+        $number = (int) $value;
+
+        return match ($unit) {
+            'g' => $number * 1024 ** 3,
+            'm' => $number * 1024 ** 2,
+            'k' => $number * 1024,
+            default => $number,
+        };
+    }
+
+    /**
+     * A database or integration error message can contain credentials
+     * ("Access denied for user 'eduplatform'@'localhost' (using password: YES)"
+     * is benign, but a DSN with a password is not). Strip anything that looks
+     * like a secret before it reaches the console or a CI log (§77).
+     */
+    private function safeMessage(Throwable $e): string
+    {
+        $message = $e->getMessage();
+
+        $message = preg_replace('/(password|pwd)\s*[=:]\s*\S+/i', '$1=[REDACTED]', $message) ?? $message;
+        $message = preg_replace('/\b(sk|pk)_(test|live)_[A-Za-z0-9]+/', '[REDACTED_KEY]', $message) ?? $message;
+
+        return mb_substr($message, 0, 300);
+    }
+}

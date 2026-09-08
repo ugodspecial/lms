@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  cPanel cron entries — EduPlatform
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  Add these in cPanel → Cron Jobs. Replace:
+#
+#    <user>       your cPanel username
+#    <app>        the directory holding artisan (the Laravel root, NOT public_html)
+#    <email>      where cron should mail its output
+#
+#  IMPORTANT — document root layout (docs/09 §2):
+#
+#    /home/<user>/<app>/            ← Laravel root: artisan, app/, config/, storage/
+#    /home/<user>/<app>/public/     ← contents of THIS directory are what
+#                                      public_html must serve
+#
+#  The Laravel root must sit OUTSIDE public_html. If it is inside, then .env,
+#  storage/ and the whole source tree are downloadable by anyone who guesses the
+#  URL — that includes student records and the Paystack secret key.
+#
+#  Every line below is idempotent and safe to run concurrently with itself;
+#  Laravel's scheduler adds its own overlap protection on top.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+MAILTO="<email>"
+
+# 1. The scheduler. One entry drives every task in routes/console.php.
+#    Required — without it nothing scheduled ever runs.
+* * * * * cd /home/<user>/<app> && /usr/local/bin/php artisan schedule:run >> /dev/null 2>&1
+
+# 2. Queue worker drain.
+#    Shared hosting kills long-lived processes, so the worker exits when the
+#    queue is empty and cron starts it again a minute later. Required — without
+#    it, queued work (payment webhook processing, notification email, meeting
+#    provisioning) is stored and never executed.
+* * * * * * cd /home/<user>/<app> && /usr/local/bin/php artisan queue:work --stop-when-empty --tries=3 --timeout=90 --sleep=3 >> /dev/null 2>&1
+
+# 3. Daily deployment self-check. Output is mailed, so a broken configuration
+#    reaches an operator instead of silently degrading a feature.
+15 3 * * * cd /home/<user>/<app> && /usr/local/bin/php artisan platform:doctor >> /home/<user>/<app>/storage/logs/doctor.log 2>&1
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Paystack webhook note (§41)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  Webhooks are NOT a cron job. Paystack calls
+#  https://<your-domain>/webhooks/paystack directly over HTTPS. What you must do:
+#
+#    1. In the Paystack dashboard → Settings → Developer, set the callback URL
+#       to that address (use your LIVE domain, not a tunnel, in production).
+#    2. Copy the same dashboard's secret key into PAYSTACK_*_SECRET_KEY. The
+#       webhook signature is HMAC-SHA512 of the raw body using THAT key — there
+#       is no separate webhook secret.
+#    3. Confirm with: php artisan platform:doctor --only=integrations
+#
+#  If step 2 uses the wrong key, every webhook fails signature verification and
+#  is rejected. Orders stay "pending" even though customers were charged —
+#  which is why `platform:doctor` treats it as a hard failure.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  PHP binary path
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#  /usr/local/bin/php is common but not universal. Find yours with:
+#
+#      which php            (over SSH)
+#
+#  or in cPanel → Select PHP Version. If your host offers several versions,
+#  point cron at the PHP 8.3+ binary explicitly, e.g.
+#  /usr/local/bin/php83 or /opt/cpanel/ea-php83/root/usr/bin/php.
+#  The cron PHP binary is independent of the one Apache uses for the website,
+#  and a mismatch here produces errors that do not reproduce in the browser.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  Verify after installing
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#      cd /home/<user>/<app>
+#      php artisan platform:doctor
+#      php artisan schedule:list
+#      tail -f storage/logs/laravel.log
+#

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         failOnWarning="true"
+         failOnRisky="true"
+         failOnDeprecation="true"
+         beStrictAboutOutputDuringTests="true"
+>
+    <testsuites>
+        <!-- Domain rules with no database and no HTTP: the crown jewels (§71) -->
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <!-- HTTP + database -->
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+        <!-- The cross-tenant access tests §71 demands by name -->
+        <testsuite name="Authorization">
+            <directory>tests/Authorization</directory>
+        </testsuite>
+        <!-- Paystack lifecycle + webhook abuse (§72). Fakes only, never live keys. -->
+        <testsuite name="Payment">
+            <directory>tests/Payment</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_KEY" value="base64:dGVzdGluZ2tleXRoYXRpczMyYnl0ZXNsb25nb2s=" />
+        <env name="APP_URL" value="http://localhost"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+
+        <!--
+            MySQL, not SQLite: the schema uses FULLTEXT indexes and CHECK
+            constraints (docs/04 §0), which SQLite cannot express. CI provides a
+            MySQL 8 service container. These are DEFAULTS — real environment
+            variables win, so CI can point at its own credentials.
+        -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="3306"/>
+        <env name="DB_DATABASE" value="eduplatform_test"/>
+        <env name="DB_USERNAME" value="root"/>
+        <env name="DB_PASSWORD" value=""/>
+
+        <!--
+            §72: never use real payment credentials in automated tests. Every
+            Paystack call is faked with Http::fake() or ManualPaymentGateway.
+        -->
+        <env name="PAYSTACK_MODE" value="test"/>
+        <env name="PAYSTACK_TEST_PUBLIC_KEY" value="pk_test_fake_for_ci"/>
+        <env name="PAYSTACK_TEST_SECRET_KEY" value="sk_test_fake_for_ci"/>
+        <env name="PAYSTACK_LIVE_PUBLIC_KEY" value=""/>
+        <env name="PAYSTACK_LIVE_SECRET_KEY" value=""/>
+
+        <!-- Integrations are disabled in tests unless a test enables them -->
+        <env name="GOOGLE_ENABLED" value="false"/>
+        <env name="GOOGLE_CLIENT_ID" value=""/>
+        <env name="GOOGLE_CLIENT_SECRET" value=""/>
+        <env name="GOOGLE_MEET_ENABLED" value="false"/>
+        <env name="MICROSOFT_ENABLED" value="false"/>
+        <env name="MICROSOFT_CLIENT_ID" value=""/>
+        <env name="MICROSOFT_CLIENT_SECRET" value=""/>
+        <env name="ZOOM_ENABLED" value="false"/>
+        <env name="ZOOM_S2S_ENABLED" value="false"/>
+        <env name="ZOOM_CLIENT_ID" value=""/>
+        <env name="ZOOM_CLIENT_SECRET" value=""/>
+
+        <!-- §74: demo accounts are never enabled under test -->
+        <env name="PLATFORM_DEMO_ACCOUNTS" value="false"/>
+        <env name="PLATFORM_DEFAULT_TIMEZONE" value="Africa/Lagos"/>
+        <env name="PLATFORM_DEFAULT_CURRENCY" value="NGN"/>
+        <env name="PLATFORM_DEFAULT_VIDEO_PROVIDER" value="manual"/>
+    </php>
+</phpunit>
