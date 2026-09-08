@@ -6,6 +6,8 @@ namespace Tests\Feature;
 
 use App\Support\Time\TimezonePresenter;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
@@ -101,24 +103,65 @@ final class PlatformBootsTest extends TestCase
         $this->post('/webhooks/__probe')->assertNoContent();
     }
 
-    public function test_csrf_protection_is_still_enforced_on_web_routes(): void
+    public function test_forgery_exemptions_cover_only_the_webhook_routes(): void
     {
-        // The counterpart to the exemption above: `webhooks/*` is exempt, but the
-        // web group must still reject a cross-site POST. Without this test the
-        // exemption could be widened by accident and nobody would notice.
-        Route::middleware('web')->post('/__csrf-probe', fn () => 'submitted');
+        // The behavioural version of this test — POST to a web route without a
+        // token and assert 419 — cannot exist. PreventRequestForgery::handle()
+        // short-circuits on runningUnitTests(), which is
+        // `runningInConsole() && runningUnitTests()`, so inside PHPUnit the token
+        // comparison is never reached and every cross-site POST succeeds. It
+        // returned 200 and could only ever return 200.
+        //
+        // What is assertable, and what actually guards the regression this test
+        // was written for, is the exemption list itself. bootstrap/app.php exempts
+        // `webhooks/*` because Paystack cannot obtain a CSRF token; if that were
+        // widened to `*`, or a portal path were added to it, every POST on the
+        // platform would be forgeable and no behavioural test in this suite would
+        // notice, because none of them exercise the middleware at all.
+        $exempt = app(PreventRequestForgery::class)->getExcludedPaths();
 
-        $this->post('/__csrf-probe')->assertStatus(419);
+        $this->assertContains(
+            'webhooks/*',
+            $exempt,
+            'Webhooks must be exempt: without it every Paystack callback is rejected with 419 and the payment stays pending after the card was charged (§41).'
+        );
 
-        // A correctly-tokened request goes through. The token is seeded into the
-        // session explicitly rather than read from csrf_token(), which is not
-        // populated until a session has actually been started.
-        $token = 'phase0-csrf-token';
+        $outsideWebhooks = array_values(array_filter(
+            $exempt,
+            static fn (mixed $uri): bool => ! str_starts_with((string) $uri, 'webhooks/')
+        ));
 
-        $this->withSession(['_token' => $token])
-            ->withHeader('X-CSRF-TOKEN', $token)
-            ->post('/__csrf-probe')
-            ->assertOk();
+        $this->assertSame(
+            [],
+            $outsideWebhooks,
+            'Only webhook URIs may be exempt from forgery protection. Unexpectedly exempt: '.implode(', ', array_map('strval', $outsideWebhooks))
+        );
+
+        // The exemption list only matters if the protection is actually attached
+        // to the web group; `webhooks/*` being exempt says nothing on its own.
+        $this->get('/')->assertOk();
+
+        /** @var Router $router */
+        $router = app('router');
+
+        /** @var array<string, list<mixed>> $groups */
+        $groups = $router->getMiddlewareGroups();
+
+        $this->assertArrayHasKey('web', $groups, 'The web middleware group must exist.');
+
+        $protected = array_filter(
+            $groups['web'],
+            static fn (mixed $middleware): bool => is_string($middleware)
+                && is_a($middleware, PreventRequestForgery::class, true)
+        );
+
+        // is_a() with allow_string covers the deprecated VerifyCsrfToken and
+        // ValidateCsrfToken aliases too, both of which extend it.
+        $this->assertNotSame(
+            [],
+            array_values($protected),
+            'The web group must run forgery protection, or the exemption list above describes middleware that never executes.'
+        );
     }
 
     public function test_security_headers_are_present_on_web_responses(): void

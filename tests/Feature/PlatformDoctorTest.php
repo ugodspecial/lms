@@ -20,6 +20,9 @@ use Tests\TestCase;
  */
 final class PlatformDoctorTest extends TestCase
 {
+    /** @var array{summary: array{pass: int, warn: int, fail: int}, checks: list<array{group: string, label: string, status: string, detail: string}>}|null */
+    private ?array $cachedReport = null;
+
     public function test_it_runs_and_emits_a_machine_readable_report(): void
     {
         $exitCode = $this->doctor();
@@ -301,6 +304,9 @@ final class PlatformDoctorTest extends TestCase
 
     private function doctor(bool $skipDatabase = true): int
     {
+        // A new run invalidates whatever the previous one produced.
+        $this->cachedReport = null;
+
         return Artisan::call('platform:doctor', [
             '--json' => true,
             '--skip-database' => $skipDatabase,
@@ -308,10 +314,24 @@ final class PlatformDoctorTest extends TestCase
     }
 
     /**
+     * The parsed report of the most recent platform:doctor run.
+     *
+     * Artisan::output() is DESTRUCTIVE: it returns BufferedOutput::fetch(), which
+     * hands back the buffer and then sets it to ''. A second call in the same test
+     * therefore returns an empty string, json_decode turns that into null, and the
+     * test fails on the assertion after the first one — which is why the tests that
+     * asked for two details failed while the ones that asked for one passed.
+     *
+     * Parse once per run and reuse it.
+     *
      * @return array{summary: array{pass: int, warn: int, fail: int}, checks: list<array{group: string, label: string, status: string, detail: string}>}
      */
     private function report(): array
     {
+        if ($this->cachedReport !== null) {
+            return $this->cachedReport;
+        }
+
         $output = trim(Artisan::output());
 
         /** @var array{summary: array{pass: int, warn: int, fail: int}, checks: list<array{group: string, label: string, status: string, detail: string}>} $report */
@@ -319,7 +339,7 @@ final class PlatformDoctorTest extends TestCase
 
         $this->assertIsArray($report, "platform:doctor --json did not emit parseable JSON:\n{$output}");
 
-        return $report;
+        return $this->cachedReport = $report;
     }
 
     private function labels(bool $skipDatabase = true): array
