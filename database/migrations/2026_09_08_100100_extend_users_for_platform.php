@@ -56,9 +56,13 @@ return new class extends Migration
 
             $table->boolean('two_factor_enabled')->default(false)->after('avatar_file_id');
 
-            // Encrypted at rest by an Eloquent cast, not by the database: the
-            // column holds a TOTP secret and a set of recovery codes, and a
-            // database dump must not be enough to bypass 2FA (§58).
+            // Encrypted at rest, but NOT by an Eloquent cast: Fortify owns this
+            // feature and its TwoFactorAuthenticatable trait encrypts and decrypts
+            // both columns itself. Adding an `encrypted` cast on top would write
+            // ciphertext over ciphertext and hand Fortify something it cannot read,
+            // and nothing would fail until somebody tried to log in with a code.
+            // The requirement stands — a database dump must not be enough to bypass
+            // 2FA (§58) — and the User model records why the cast is absent.
             $table->text('two_factor_secret')->nullable();
             $table->text('two_factor_recovery_codes')->nullable();
             $table->timestamp('two_factor_confirmed_at')->nullable();

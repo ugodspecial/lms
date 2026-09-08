@@ -6,7 +6,7 @@ namespace App\Providers;
 
 use App\Domain\Administration\Permissions;
 use App\Domain\Administration\Roles;
-use App\Models\User;
+use App\Domain\Identity\Models\User;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;

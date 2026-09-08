@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Support\Time;
 
-use App\Models\User;
+use App\Domain\Identity\Models\User;
 use App\Support\Time\TimezonePresenter;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Support\Carbon;
