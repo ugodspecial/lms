@@ -26,17 +26,28 @@ trait GeneratesUuid
 {
     public static function bootGeneratesUuid(): void
     {
-        static::creating(function (Model $model): void {
-            $column = $model->getUuidColumn();
+        // Resolved once, outside the callback. Calling it on the model inside
+        // would require the callback to type its parameter as something that
+        // declares the method, and the trait cannot name the class it is used by.
+        // `static::` here is the using class, via late static binding from
+        // Model::bootTraits().
+        $column = static::getUuidColumn();
 
+        static::creating(function (Model $model) use ($column): void {
             if (empty($model->getAttribute($column))) {
                 $model->setAttribute($column, (string) Str::uuid());
             }
         });
     }
 
-    /** The column that carries the UUID. Overridable if a table names it differently. */
-    public function getUuidColumn(): string
+    /**
+     * The column that carries the UUID.
+     *
+     * Static because it is read from `bootGeneratesUuid()`, which runs once per
+     * class at boot, before any instance exists. A model that names the column
+     * differently must override this as a static method too.
+     */
+    public static function getUuidColumn(): string
     {
         return 'uuid';
     }

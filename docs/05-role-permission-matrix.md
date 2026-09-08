@@ -44,7 +44,7 @@ by which `*.portal.access` permissions the user holds.
 
 ---
 
-## 3. Permission registry — 168 permissions
+## 3. Permission registry — 214 permissions
 
 ### 3.1 Identity & access (14)
 
@@ -346,10 +346,16 @@ returns 403 for an evaluator — so a seeder mistake cannot silently leak money 
 | `integration_logs.view` | ✅ | ✅ | ⬚ | 🔒 paystack only | ⬚ | ⬚ | ⬚ | ⬚ |
 | `admin.panel.access` | ✅ | ✅ | ✅ | ✅ | ✅ | ⬚ | ⬚ | ⬚ |
 
-**Count:** 14 + 14 + 11 + 8 + 22 + 13 + 18 + 21 + 16 + 15 + 6 + 26 + 12 + 18 = **214 permission
-slots**, of which **168 distinct permission strings** (some rows are scoped variants of the
-same string). The seeder registers the 168 distinct strings; scoping is implemented in
-policies, not by inventing near-duplicate permissions.
+**Count:** 14 + 14 + 11 + 8 + 22 + 13 + 18 + 21 + 16 + 15 + 6 + 26 + 12 + 18 = **214 permissions**.
+All 214 rows are distinct permission strings — no string appears twice and none appears in two
+groups — so the seeder registers 214. *(This paragraph previously claimed 168 of the 214 slots
+were distinct and that the rest were scoped variants of the same string; the matrix contains no
+such variants. Corrected 2026-09-08, see the deviations log in docs/10.)* Scoping is still
+implemented in policies, not by inventing near-duplicate permissions: the 93 permissions that are
+granted but insufficient on their own carry their per-role qualifier in `Permissions::SCOPED`, and
+the four that a role is denied *for a stated reason* (§28, §49, §88) carry that reason in
+`Permissions::DENIED`. One permission, `certificates.verify_public`, is granted to no role: the
+matrix marks it `*public*`, and §4 makes it an unauthenticated, rate-limited endpoint.
 
 ---
 
@@ -402,7 +408,7 @@ final class Permissions
     // … 11 role constants
 
     /** @return array<string, list<string>> module => permissions */
-    public static function catalog(): array { /* 168 strings grouped by module */ }
+    public static function catalog(): array { /* 214 strings grouped by module */ }
 
     /** Permissions granted automatically when a profile is activated. */
     public const ON_STUDENT_ACTIVATED  = ['student.portal.access', 'user.profile.update_own', …];

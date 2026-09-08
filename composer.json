@@ -87,7 +87,6 @@
                 "laravel/fortify",
                 "laravel/socialite",
                 "laravel/sanctum",
-                "spatie/laravel-permission",
                 "livewire/livewire"
             ]
         }

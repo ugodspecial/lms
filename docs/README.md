@@ -25,7 +25,7 @@ copied from any existing product.
 | 02 | [Domain Model](02-domain-model.md) | Bounded contexts, aggregates, entities, value objects, invariants, domain events | §5, §102.2 |
 | 03 | [Database ERD](03-database-erd.md) | Mermaid + text ERD, per-context diagrams, cardinalities | §67, §102.3 |
 | 04 | [Database Table Inventory](04-database-table-inventory.md) | All **124 tables**: purpose, key columns, indexes, constraints, relations | §66, §102.4 |
-| 05 | [Role & Permission Matrix](05-role-permission-matrix.md) | 11 roles × 168 granular permissions, policy mapping | §6, §102.5 |
+| 05 | [Role & Permission Matrix](05-role-permission-matrix.md) | 11 roles × 214 granular permissions, policy mapping | §6, §102.5 |
 | 06 | [Feature / Module Matrix](06-feature-module-matrix.md) | Module × phase × tables × screens × permissions × tests | §102.6 |
 | 07 | [User Workflows](07-user-workflows.md) | 24 end-to-end workflows with failure paths & side effects | §100, §102.7 |
 | 08 | [Integrations](08-integrations.md) | Paystack, Google, Zoom, Microsoft, mail, storage, PDF/QR | §36–§43, §102.8 |

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Administration\Permissions;
+use App\Domain\Administration\Roles;
 use App\Domain\Commerce\ValueObjects\Currency;
 use App\Http\Middleware\EnsureIntegrationConfigured;
 use Illuminate\Console\Command;
@@ -345,7 +347,133 @@ final class PlatformDoctor extends Command
                 : $this->recordPass('migrations', 'Up to date');
         } catch (Throwable $e) {
             $this->recordFail('migrations', $this->safeMessage($e));
+
+            return;
         }
+
+        // Only reached once the schema is current: comparing the registry against
+        // tables that do not exist yet would report a symptom of the pending
+        // migration rather than the real problem.
+        $this->checkAuthorizationRegistry();
+    }
+
+    /**
+     * Does the authorization data in the database match the code registry?
+     *
+     * A deploy that runs `migrate --force` but forgets `db:seed --force` leaves
+     * authorization silently out of step with the code, and it fails without
+     * raising an error anywhere: a permission the registry declares and the table
+     * lacks denies everybody, so a feature shipped that morning looks broken to
+     * the administrators meant to use it. Neither that nor its mirror image is
+     * visible in a log, so both are compared directly here.
+     *
+     * The two directions get different severities, because they are different
+     * problems:
+     *
+     * • MISSING is a failure. The code needs it, the database does not have it,
+     *   and the fix is a command the operator can run immediately.
+     *
+     * • ORPHAN is a warning. The database has a row the code no longer declares.
+     *   That is worth knowing and is not safe to act on automatically: the row may
+     *   be a deliberate retirement, or the registry that arrived may be the thing
+     *   that is wrong. docs/05 §5 is explicit — orphans are reported, not removed
+     *   — because a seeder that deletes on a bad registry would strip permissions
+     *   from real staff as a side effect of a typo.
+     */
+    private function checkAuthorizationRegistry(): void
+    {
+        try {
+            if (! Schema::hasTable('permissions') || ! Schema::hasTable('roles')) {
+                $this->recordWarn('authorization registry', 'permissions/roles tables absent. Run: php artisan migrate --force');
+
+                return;
+            }
+
+            $declared = Permissions::all();
+            $stored = $this->storedNames('permissions');
+
+            $missing = array_values(array_diff($declared, $stored));
+            $orphans = array_values(array_diff($stored, $declared));
+
+            $missing === []
+                ? $this->recordPass('permissions', count($declared).' registered, matching the code registry')
+                : $this->recordFail('permissions', sprintf(
+                    '%d of %d missing (%s). Run: php artisan db:seed --class=PermissionSeeder --force',
+                    count($missing),
+                    count($declared),
+                    $this->summariseNames($missing),
+                ));
+
+            if ($orphans !== []) {
+                $this->recordWarn('permission orphans', sprintf(
+                    '%d in the database are not in the registry (%s). Left in place: retire one deliberately, or check that the deployed code is the code you meant to deploy.',
+                    count($orphans),
+                    $this->summariseNames($orphans),
+                ));
+            }
+
+            $declaredRoles = Roles::ALL;
+            $storedRoles = $this->storedNames('roles');
+
+            $missingRoles = array_values(array_diff($declaredRoles, $storedRoles));
+            $orphanRoles = array_values(array_diff($storedRoles, $declaredRoles));
+
+            // Reported independently of the permissions result. Both go stale for
+            // the same reason, and an operator reading one failure should not have
+            // to fix it, re-run, and then discover the second.
+            $missingRoles === []
+                ? $this->recordPass('roles', count($declaredRoles).' seeded, matching the docs/05 matrix')
+                : $this->recordFail('roles', sprintf(
+                    '%d of %d missing (%s). Run: php artisan db:seed --class=RoleSeeder --force',
+                    count($missingRoles),
+                    count($declaredRoles),
+                    $this->summariseNames($missingRoles),
+                ));
+
+            if ($orphanRoles !== []) {
+                // Roles are few and named after real jobs, so naming them beats a
+                // count: "3 unexpected" does not say whether somebody created a
+                // role called Super Administrator.
+                $this->recordWarn('role orphans', sprintf(
+                    '%d in the database are not seeded roles (%s). Not removed: deleting a role takes it off everyone holding it.',
+                    count($orphanRoles),
+                    $this->summariseNames($orphanRoles),
+                ));
+            }
+        } catch (Throwable $e) {
+            $this->recordWarn('authorization registry', 'Could not read: '.$this->safeMessage($e));
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function storedNames(string $table): array
+    {
+        return DB::table($table)
+            ->orderBy('name')
+            ->pluck('name')
+            ->map(static fn ($name): string => (string) $name)
+            ->all();
+    }
+
+    /**
+     * Names the first few offenders and says how many more there are.
+     *
+     * A count on its own does not tell an operator whether the missing permission
+     * is the one gating the feature they just deployed, and listing all of them
+     * would bury the answer in a 214-name wall. Five is enough to recognise the
+     * shape of the problem — a whole group absent, or one stray row.
+     *
+     * @param  list<string>  $names
+     */
+    private function summariseNames(array $names, int $limit = 5): string
+    {
+        $shown = implode(', ', array_slice($names, 0, $limit));
+
+        $remaining = count($names) - $limit;
+
+        return $remaining > 0 ? "{$shown}, +{$remaining} more" : $shown;
     }
 
     // ── Runtime drivers ─────────────────────────────────────────────────────

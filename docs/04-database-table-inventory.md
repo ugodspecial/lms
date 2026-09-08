@@ -67,7 +67,7 @@ is constrained.
 | 19 | `audit_logs` | Generic who/what/before/after (§56) | see ERD §2 | `IX(auditable_type, auditable_id)`, `IX(user_id, created_at)`, `IX(event, created_at)`, `IX(created_at)` for retention pruning | — | self |
 | 20 | `files` | Centralized file registry with visibility classes (§40, §59) | see ERD §2 | `UQ(uuid)`, `IX(fileable_type, fileable_id)`, `IX(category, visibility)`, `IX(checksum_sha256)` for de-dup | ✅ | ✅ |
 
-**Phase 1 also seeds:** 168 permissions, 11 roles, and ~60 settings (organization, currency,
+**Phase 1 also seeds:** 214 permissions, 11 roles, and ~60 settings (organization, currency,
 timezone, `age_of_majority`, grading default, platform fee, retention, feature flags).
 
 ---

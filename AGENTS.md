@@ -11,7 +11,7 @@ money or exposes a child's records.
 
 [`docs/`](docs/README.md) is the source of truth and was written before any code.
 Thirteen documents: architecture, domain model, ERD, a 124-table inventory, an
-11-role / 168-permission matrix, a 202-feature module map, 24 workflows, the
+11-role / 214-permission matrix, a 202-feature module map, 24 workflows, the
 integration contracts, shared-hosting deployment, the phased plan with exit gates,
 and 15 ADRs.
 
@@ -210,13 +210,18 @@ there.
 
 ## Conventions already established
 
-- **Package discovery is deferred per phase.** Fortify, Socialite, Sanctum,
-  `spatie/laravel-permission` and Livewire are installed but sit in
-  `composer.json` → `extra.laravel.dont-discover`, because each auto-registers
-  routes, guards or assets on discovery. Remove an entry in the phase that
-  configures that package — and in the same commit publish its config, add its
-  views and wire its tests. Never remove an entry without doing all three, or
-  you have shipped a `/login` route that renders a view which does not exist.
+- **Package discovery is deferred per phase.** Fortify, Socialite, Sanctum and
+  Livewire are installed but sit in `composer.json` →
+  `extra.laravel.dont-discover`, because each auto-registers routes, guards or
+  assets on discovery. Remove an entry in the phase that configures that
+  package — and in the same commit publish its config, add its views and wire
+  its tests. Never remove an entry without doing all three, or you have shipped a
+  `/login` route that renders a view which does not exist.
+  `spatie/laravel-permission` came off that list in Phase 1: it registers
+  middleware aliases, Blade directives and a cache registrar, but no routes and
+  no views of its own, so enabling it cannot expose a URL that renders nothing.
+  Its config, tables, registry, seeders and tests arrive in Phase 1; the admin
+  screens that read them arrive with the administration UI.
 - **Laravel 13 idioms.** PHP 8 attributes on models (`#[Fillable]`, `#[Hidden]`
   from `Illuminate\Database\Eloquent\Attributes`); `casts()` as a method;
   `bootstrap/providers.php`; `Application::configure()` chaining in

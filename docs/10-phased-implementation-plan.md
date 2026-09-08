@@ -67,7 +67,7 @@ cleanly. If you prefer, run `composer create-project` yourself and I will layer 
 | **Database changes** | 20 tables: `users`, `password_reset_tokens`, `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs`, `notifications`, `personal_access_tokens`, `roles`, `permissions`, `model_has_roles`, `model_has_permissions`, `role_has_permissions`, `connected_accounts`, `consents`, `settings`, `audit_logs`, `files` |
 | **Models** | `User`, `ConnectedAccount`, `Consent`, `Setting`, `AuditLog`, `File` (+ spatie's `Role`, `Permission`) |
 | **Business rules** | `SettingsService` (typed casts, single cache key, audit on change) · `AuditLogger` + `SensitiveDataScrubber` · `FileService` + `DownloadAuthorizer` (visibility classes) · `TwoFactorPolicy` (privileged roles must have 2FA) · `OAuthLinkingService` · user-status transitions |
-| **Permissions** | 168 permissions seeded from the `Permissions` registry; 11 roles; area-access permissions (`admin.panel.access`, `parent.portal.access`, `student.portal.access`, `tutor.portal.access`, `evaluator.portal.access`) |
+| **Permissions** | 214 permissions seeded from the `Permissions` registry; 11 roles; area-access permissions (`admin.panel.access`, `parent.portal.access`, `student.portal.access`, `tutor.portal.access`, `evaluator.portal.access`) |
 | **UI screens** | Design-system showcase · auth: login, register, forgot/reset password, verify email, 2FA challenge · `/settings/profile`, `/settings/security`, `/settings/sessions`, `/settings/notifications` · Admin: dashboard shell, Users (list/detail/suspend/impersonate), Access → Roles, Access → Permissions, Settings (tabbed), Audit log viewer, Files/Health · error pages 403/404/419/429/500/503 · five portal layout shells · `/demo-login` (non-production only) |
 | **Tests** | ~70. Registration, verification, reset, throttling, user-enumeration, Google/Microsoft OAuth (Socialite faked), 2FA + recovery codes, session revocation, role/permission CRUD + sync, permission-gated navigation, settings (incl. secret-never-exposed), audit redaction, file upload validation, secure download (visibility × 4, rate limit, guessable URL), impersonation audit, area access × 5 portals, error pages, `platform:doctor` |
 | **Security review** | password hashing + Fortify config, session cookie flags, CSRF coverage, rate limits on all auth routes, header middleware, `.env`/secret handling, mass-assignment allowlists, upload MIME/extension/size validation |
@@ -329,3 +329,19 @@ feature — the entry point is simply hidden (§93).
    reasons.
 4. Nothing is marked complete on the strength of a UI page existing (§101).
 5. Deviations from this document are recorded here with a dated note, not silently absorbed.
+
+---
+
+## Deviations log
+
+Working agreement item 5. An entry is added when the build does something these
+documents do not say, or when a document turns out to contradict itself or the
+code. Corrections to the documents themselves are made in the same commit, so
+this log records *why*, not *what is currently wrong*.
+
+| Date | Phase | Deviation | Reason |
+|------|-------|-----------|--------|
+| 2026-09-08 | 0 | Pest 4 → PHPUnit 12; spatie/laravel-permission v7 → v8 | The Laravel 13 skeleton ships PHPUnit, and v8 is the line compatible with it. Documents corrected in `71e15dc`. |
+| 2026-09-08 | 1 | `notification_preferences` is built in Phase 1, not Phase 5 | Phase 1 ships `/settings/notifications`. Rendering a toggle that stores nothing is a dead control (§63, item 4 of the constraints), so the table has to exist before the screen does. Cardinality follows docs/04 — `UQ(user_id, notification_key)`, one row per notification — not the ERD's one-to-one, which cannot express a different choice per notification. `message_templates` stays in Phase 5: Blade bodies are the documented fallback (docs/02 §3.7), not a shortcut. |
+| 2026-09-08 | 1 | The permission registry holds **214** permissions, not 168 | docs/05 §3 summed its own sections to "214 permission slots, of which 168 distinct permission strings (some rows are scoped variants of the same string)". The matrix contains no such variants: all 214 rows are distinct strings, no string appears twice, and none appears in two groups. The sum beside the claim was right and the claim was stale. The principle it was protecting is kept — scoping lives in policies, and the 93 granted-but-scoped permissions are recorded with their per-role qualifier in `Permissions::SCOPED` rather than being split into near-duplicate permission names. docs/05, 04, 10, 11, README and AGENTS.md corrected. |
+| 2026-09-08 | 1 | `FileVisibility` cases are `IsPublic` / `IsAuthenticated` / `IsPrivate` / `IsRestricted` | `case Public` and `case Private` are parse errors: PHP keywords are case-insensitive and enum cases are class constants. The stored values, and therefore the CHECK constraints and the docs/02 vocabulary, are unchanged. |

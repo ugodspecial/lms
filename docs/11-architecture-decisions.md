@@ -462,7 +462,7 @@ unable to approve tutors or see financial data.
 **Decision.**
 1. `spatie/laravel-permission` **v8** (verified: requires `php: ^8.3` —
    the Laravel-13-compatible line).
-2. **168 permission strings** defined in a code registry
+2. **214 permission strings** defined in a code registry
    (`app/Domain/Administration/Permissions.php`) and synced to the database by an idempotent
    seeder. Code is the source of truth for *what exists*; the database is the source of truth
    for *who has what*.
@@ -493,7 +493,7 @@ unable to approve tutors or see financial data.
 + New roles are data, not code. The permission matrix is reviewable in one document.
 + Spatie's permission cache keeps the hot path cheap on shared hosting.
 + §28/§30/§49 become structural facts provable by test.
-− 168 permissions is a lot to keep tidy. Mitigated by the code registry, the matrix document,
+− 214 permissions is a lot to keep tidy. Mitigated by the code registry, the matrix document,
   and a `platform:audit-authorization` command that reports orphans and unmapped routes.
 − Package upgrade risk across Laravel majors. Mitigated: v7 is verified for Laravel 13, and
   the package touches only `roles`/`permissions`/pivot tables, which we could reimplement if

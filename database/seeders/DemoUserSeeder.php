@@ -42,18 +42,25 @@ class DemoUserSeeder extends Seeder
                 continue;
             }
 
-            // updateOrCreate so seeding twice cannot fail on the unique email
-            // index: `migrate:fresh --seed` is run repeatedly in CI, and a
-            // developer reseeding a dirty database should not have to think about
-            // whether these rows already exist.
-            User::query()->updateOrCreate(
-                ['email' => $email],
-                [
-                    'name' => (string) ($account['name'] ?? $email),
-                    'password' => $password,
-                    'email_verified_at' => now(),
-                ]
-            );
+            // firstOrNew + save() rather than updateOrCreate, so seeding twice
+            // cannot fail on the unique email index — `migrate:fresh --seed` runs
+            // repeatedly in CI, and a developer reseeding a dirty database should
+            // not have to think about whether these rows already exist.
+            $user = User::query()->firstOrNew(['email' => $email]);
+
+            // Attributes are assigned directly, not mass-assigned. The User model's
+            // fillable list is name/email/password and `email_verified_at` is
+            // deliberately NOT in it: a request able to mass-assign that column
+            // would let anyone mark their own account verified. Mass assignment
+            // discards non-fillable keys silently, so passing it to
+            // updateOrCreate() here produced six unverified demo logins — seeded,
+            // visible in the roster, and then refused by email verification. That
+            // is a dead demo account (§63), and nothing about it looked broken.
+            $user->name = (string) ($account['name'] ?? $email);
+            $user->password = $password;
+            $user->email_verified_at = now();
+
+            $user->save();
         }
     }
 }

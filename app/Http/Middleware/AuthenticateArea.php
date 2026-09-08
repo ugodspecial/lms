@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Domain\Administration\Permissions;
+use App\Http\Middleware\Concerns\RefusesUnauthorizedRequests;
 use Closure;
+use Illuminate\Contracts\Auth\Access\Authorizable;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -19,67 +21,124 @@ use Symfony\Component\HttpFoundation\Response;
  * an administrator must not accidentally land in the student portal with an
  * admin session that outlives the browser.
  *
- * Area membership is derived from the authenticated user's roles, not from the
- * URL — the URL declares the *area*, this middleware proves the *person* belongs
- * to it. The authoritative ability checks remain in policies (ADR-14); this is
- * the coarse front door that keeps the fine-grained checks from being reached
- * by the wrong audience at all.
+ * Area membership is decided by the area's access PERMISSION, read from
+ * `config('platform.areas')` — not by a list of role names. Three reasons, in
+ * order of importance:
+ *
+ * • ADR-09 puts the only role-name check in the whole authorization path inside
+ *   `Gate::before`. A second one here would mean that admitting an Academic
+ *   Admin to /admin requires editing this middleware as well as the matrix.
+ *
+ * • It makes the bypass work. `admin.panel.access` reaches Super Admin through
+ *   `Gate::before`; a `hasAnyRole(['super-admin'])` list would have to be kept in
+ *   step with it by hand.
+ *
+ * • The config already names the permission, and the registry already declares
+ *   it. A hardcoded role list here was a third vocabulary — and Phase 0's list
+ *   used slugs (`super-admin`, `finance-admin`, `support-agent`) that no seeder
+ *   creates, so it would have refused every real user the moment roles existed.
+ *
+ * The authoritative ability checks remain in policies (ADR-14); this is the
+ * coarse front door that keeps the fine-grained checks from being reached by the
+ * wrong audience at all.
  *
  * Usage:  Route::prefix('admin')->middleware('area:admin')->group(...)
  */
 final class AuthenticateArea
 {
-    /** Role that grants access to each area. */
-    private const AREA_ROLES = [
-        'student' => ['student'],
-        'parent' => ['parent'],
-        'tutor' => ['tutor'],
-        'evaluator' => ['evaluator'],
-        'admin' => ['super-admin', 'admin', 'academic-admin', 'finance-admin', 'support-agent'],
-        'api' => [],
-    ];
+    use RefusesUnauthorizedRequests;
+
+    /**
+     * Areas that are not portals.
+     *
+     * `api` is authorized by the abilities on the caller's Sanctum token (§42),
+     * not by a portal permission. Rejecting a machine client for lacking a web
+     * role would make the API second-class and push integrators toward bypassing
+     * it entirely — which is how a platform ends up with a scraper holding a
+     * parent's session cookie.
+     *
+     * @var list<string>
+     */
+    private const NON_PORTAL_AREAS = ['api'];
 
     public function handle(Request $request, Closure $next, string ...$areas): Response
     {
         $area = $areas[0] ?? '';
 
-        if (! array_key_exists($area, self::AREA_ROLES)) {
+        if (in_array($area, self::NON_PORTAL_AREAS, true)) {
+            return $next($request);
+        }
+
+        /** @var array{path?: string, home?: string, permissions?: array<int, string>}|null $config */
+        $config = config("platform.areas.{$area}");
+
+        if (! is_array($config)) {
+            // A typo in a route file must fail loudly in every environment.
+            // Falling through to `allow` here would silently expose whatever the
+            // route guards.
             abort(500, "Unknown portal area [{$area}].");
         }
 
-        // The api area is guarded by Sanctum rather than by role: a token's
-        // abilities define what it may do (§42).
-        if ($area === 'api') {
-            return $next($request);
-        }
+        $required = $this->accessPermissions($area, $config['permissions'] ?? []);
 
         $user = $request->user();
 
         if ($user === null) {
-            if ($request->expectsJson()) {
-                return response()->json([
-                    'error' => ['code' => 'auth.unauthenticated', 'message' => 'Authentication required.'],
-                ], 401);
+            return $this->refuseUnauthenticated($request);
+        }
+
+        if (! $user instanceof Authorizable) {
+            abort(500, 'The authenticated principal cannot be authorized: it does not implement '.Authorizable::class);
+        }
+
+        foreach ($required as $permission) {
+            if ($user->can($permission)) {
+                return $next($request);
+            }
+        }
+
+        // Names the area and nothing else. Listing the permissions that would have
+        // worked turns a 403 into a map of the privilege model (§76).
+        return $this->refuseForbidden(
+            $request,
+            'auth.area_forbidden',
+            "You do not have access to the {$area} area.",
+        );
+    }
+
+    /**
+     * The permissions that admit a user to an area, validated against the
+     * registry.
+     *
+     * Both failure modes here are configuration errors rather than user errors,
+     * and both are silent if left unchecked: an area with no permission would
+     * admit every authenticated user, and an area gated on a permission the
+     * registry does not declare would admit nobody — the second is how a whole
+     * portal goes dark after a rename and gets reported as "login is broken".
+     *
+     * @param  array<int, mixed>  $configured
+     * @return list<string>
+     */
+    private function accessPermissions(string $area, array $configured): array
+    {
+        $required = [];
+
+        foreach ($configured as $permission) {
+            if (! is_string($permission) || $permission === '') {
+                continue;
             }
 
-            // `login` is registered by Fortify in Phase 1; fall back instead of
-            // turning a redirect into a RouteNotFoundException.
-            return redirect()->guest(
-                Route::has('login') ? route('login') : route('home')
-            );
+            if (! Permissions::has($permission)) {
+                abort(500, "Portal area [{$area}] is gated on unregistered permission [{$permission}].");
+            }
+
+            $required[] = $permission;
         }
 
-        $allowed = self::AREA_ROLES[$area];
-
-        // hasAnyRole() arrives with Spatie Permission in Phase 1. Until the
-        // User model has it, access is denied rather than accidentally allowed
-        // — failing closed is the only safe default for a gate.
-        if (! method_exists($user, 'hasAnyRole') || ! $user->hasAnyRole($allowed)) {
-            return $request->expectsJson()
-                ? response()->json(['error' => ['code' => 'auth.area_forbidden', 'message' => "You do not have access to the {$area} area."]], 403)
-                : abort(403, "You do not have access to the {$area} area.");
+        if ($required === []) {
+            abort(500, "Portal area [{$area}] declares no access permission in config/platform.php.");
         }
 
-        return $next($request);
+        return $required;
     }
 }

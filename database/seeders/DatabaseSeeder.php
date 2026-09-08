@@ -4,11 +4,22 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 /**
  * Seeds the database.
+ *
+ * NOTE: this class deliberately does NOT use `WithoutModelEvents`, which the
+ * Laravel skeleton includes by default. That trait wraps seeding in
+ * `Model::withoutEvents()`, so a `creating` hook never runs — and
+ * `GeneratesUuid` assigns the NOT NULL `uuid` columns from exactly such a hook.
+ * With events suppressed, seeding failed with "Field 'uuid' doesn't have a
+ * default value".
+ *
+ * A column the database requires is not an event side-effect, so seeding must not
+ * opt out of the code that populates it. If a later seeder needs to avoid an
+ * observer — sending a notification for every seeded row, say — suppress events
+ * around that seeder specifically rather than around all of them.
  *
  * Two categories of thing are seeded here, and they are kept strictly apart:
  *
@@ -31,12 +42,14 @@ use Illuminate\Database\Seeder;
  */
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     public function run(): void
     {
         $this->call([
-            // Phase 1: PermissionSeeder::class, RoleSeeder::class, SettingSeeder::class,
+            // Configuration. Safe in every environment, including production: the
+            // application cannot authorize anything without these rows.
+            PermissionSeeder::class,
+            RoleSeeder::class,
+            // Phase 1 also adds SettingSeeder once the settings inventory lands.
         ]);
 
         if (! app()->environment('production')) {

@@ -3,6 +3,7 @@
 use App\Exceptions\PlatformException;
 use App\Http\Middleware\AuthenticateArea;
 use App\Http\Middleware\EnsureIntegrationConfigured;
+use App\Http\Middleware\EnsurePermission;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetUserTimezone;
 use Illuminate\Foundation\Application;
@@ -41,6 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // request, including Livewire updates (docs/01 §5.1).
         $middleware->alias([
             'area' => AuthenticateArea::class,
+            'permission' => EnsurePermission::class,
             'timezone' => SetUserTimezone::class,
             'integration.connected' => EnsureIntegrationConfigured::class,
         ]);
