@@ -82,7 +82,7 @@ final class PlatformDoctor extends Command
 
     private function checkPhp(): void
     {
-        $this->pass('PHP version', PHP_VERSION);
+        $this->recordPass('PHP version', PHP_VERSION);
 
         // pdo_mysql is the whole application; mbstring and openssl are used by
         // auth and by every string operation on non-ASCII names, which in a
@@ -105,13 +105,13 @@ final class PlatformDoctor extends Command
 
         foreach ($required as $extension => $reason) {
             extension_loaded($extension)
-                ? $this->pass("ext-{$extension}", $reason)
-                : $this->fail("ext-{$extension}", "Missing. Needed for: {$reason}. Enable it in cPanel → Select PHP Version.");
+                ? $this->recordPass("ext-{$extension}", $reason)
+                : $this->recordFail("ext-{$extension}", "Missing. Needed for: {$reason}. Enable it in cPanel → Select PHP Version.");
         }
 
         foreach (['intl', 'exif', 'imagick'] as $optional) {
             if (! extension_loaded($optional)) {
-                $this->warn("ext-{$optional}", 'Not installed. Optional, but some features will be reduced.');
+                $this->recordWarn("ext-{$optional}", 'Not installed. Optional, but some features will be reduced.');
             }
         }
 
@@ -133,8 +133,8 @@ final class PlatformDoctor extends Command
             }
 
             $ok
-                ? $this->pass($directive, $actual)
-                : $this->warn($directive, "{$actual}, expected at least {$minimum}. {$why}");
+                ? $this->recordPass($directive, $actual)
+                : $this->recordWarn($directive, "{$actual}, expected at least {$minimum}. {$why}");
         }
     }
 
@@ -143,24 +143,24 @@ final class PlatformDoctor extends Command
     private function checkEnvironment(): void
     {
         if (! File::exists(base_path('.env'))) {
-            $this->fail('.env', 'Missing. Copy .env.example to .env and fill in the values.');
+            $this->recordFail('.env', 'Missing. Copy .env.example to .env and fill in the values.');
         } else {
-            $this->pass('.env', 'Present');
+            $this->recordPass('.env', 'Present');
         }
 
         $key = (string) config('app.key');
 
         match (true) {
-            $key === '' => $this->fail('APP_KEY', 'Empty. Run: php artisan key:generate'),
-            str_starts_with($key, 'base64:dGVzdGluZ2tleXRoYXQ') => $this->fail(
+            $key === '' => $this->recordFail('APP_KEY', 'Empty. Run: php artisan key:generate'),
+            str_starts_with($key, 'base64:dGVzdGluZ2tleXRoYXQ') => $this->recordFail(
                 'APP_KEY',
                 'Still the value from phpunit.xml. Run: php artisan key:generate'
             ),
-            default => $this->pass('APP_KEY', 'Set'),
+            default => $this->recordPass('APP_KEY', 'Set'),
         };
 
         $env = app()->environment();
-        $this->pass('APP_ENV', $env);
+        $this->recordPass('APP_ENV', $env);
 
         $isProduction = $env === 'production';
 
@@ -168,47 +168,47 @@ final class PlatformDoctor extends Command
         // in production renders stack traces, database credentials and student
         // data to anyone who triggers an error (§76).
         $isProduction && config('app.debug')
-            ? $this->fail('APP_DEBUG', 'true in production exposes stack traces, credentials and student data. Set APP_DEBUG=false.')
-            : $this->pass('APP_DEBUG', var_export((bool) config('app.debug'), true));
+            ? $this->recordFail('APP_DEBUG', 'true in production exposes stack traces, credentials and student data. Set APP_DEBUG=false.')
+            : $this->recordPass('APP_DEBUG', var_export((bool) config('app.debug'), true));
 
         $url = (string) config('app.url');
 
         match (true) {
-            $url === '' => $this->fail('APP_URL', 'Empty. Set it to the real public URL, or OAuth redirects and emails will be wrong.'),
-            str_contains($url, 'localhost') && $isProduction => $this->fail(
+            $url === '' => $this->recordFail('APP_URL', 'Empty. Set it to the real public URL, or OAuth redirects and emails will be wrong.'),
+            str_contains($url, 'localhost') && $isProduction => $this->recordFail(
                 'APP_URL',
                 "{$url} in production. OAuth callbacks, password-reset links and Paystack redirects all depend on it."
             ),
-            default => $this->pass('APP_URL', $url),
+            default => $this->recordPass('APP_URL', $url),
         };
 
         // §74: demo accounts in production hand an attacker a real
         // administrator session for the price of a guess.
         if (config('platform.demo_accounts.enabled')) {
             $isProduction
-                ? $this->fail('PLATFORM_DEMO_ACCOUNTS', 'Enabled in production. Set it to false.')
-                : $this->warn('PLATFORM_DEMO_ACCOUNTS', 'Enabled. Correct for local development only.');
+                ? $this->recordFail('PLATFORM_DEMO_ACCOUNTS', 'Enabled in production. Set it to false.')
+                : $this->recordWarn('PLATFORM_DEMO_ACCOUNTS', 'Enabled. Correct for local development only.');
         } else {
-            $this->pass('PLATFORM_DEMO_ACCOUNTS', 'Disabled');
+            $this->recordPass('PLATFORM_DEMO_ACCOUNTS', 'Disabled');
         }
 
         // §62 / ADR-08: storage timezone must remain UTC or every stored instant
         // becomes ambiguous across daylight-saving boundaries.
         (string) config('app.timezone') === 'UTC'
-            ? $this->pass('app.timezone', 'UTC (storage timezone, correct)')
-            : $this->fail('app.timezone', (string) config('app.timezone').' — must stay UTC. Display timezone is platform.timezone.default instead.');
+            ? $this->recordPass('app.timezone', 'UTC (storage timezone, correct)')
+            : $this->recordFail('app.timezone', (string) config('app.timezone').' — must stay UTC. Display timezone is platform.timezone.default instead.');
 
         $displayTimezone = (string) config('platform.timezone.default');
 
         in_array($displayTimezone, \DateTimeZone::listIdentifiers(), true)
-            ? $this->pass('platform.timezone.default', $displayTimezone)
-            : $this->fail('platform.timezone.default', "{$displayTimezone} is not a valid IANA timezone.");
+            ? $this->recordPass('platform.timezone.default', $displayTimezone)
+            : $this->recordFail('platform.timezone.default', "{$displayTimezone} is not a valid IANA timezone.");
 
         $currency = (string) config('platform.currency');
 
         in_array($currency, \App\Domain\Commerce\ValueObjects\Currency::available(), true)
-            ? $this->pass('platform.currency', $currency)
-            : $this->fail('platform.currency', "{$currency} is not defined in config/platform.php 'currencies'.");
+            ? $this->recordPass('platform.currency', $currency)
+            : $this->recordFail('platform.currency', "{$currency} is not defined in config/platform.php 'currencies'.");
     }
 
     // ── Storage ─────────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ final class PlatformDoctor extends Command
             $path = base_path($relative);
 
             if (! File::isDirectory($path)) {
-                $this->fail($relative, "Missing. Create it (purpose: {$purpose}).");
+                $this->recordFail($relative, "Missing. Create it (purpose: {$purpose}).");
 
                 continue;
             }
@@ -244,9 +244,9 @@ final class PlatformDoctor extends Command
             try {
                 File::put($probe, (string) now()->timestamp);
                 File::delete($probe);
-                $this->pass($relative, "Writable — {$purpose}");
+                $this->recordPass($relative, "Writable — {$purpose}");
             } catch (Throwable $e) {
-                $this->fail($relative, "Not writable by the PHP process ({$e->getMessage()}). Run: chown -R <cpanel user> {$relative} && chmod -R 775 {$relative}");
+                $this->recordFail($relative, "Not writable by the PHP process ({$e->getMessage()}). Run: chown -R <cpanel user> {$relative} && chmod -R 775 {$relative}");
             }
         }
 
@@ -255,9 +255,9 @@ final class PlatformDoctor extends Command
         $link = public_path('storage');
 
         if (File::isDirectory($link) || File::exists($link)) {
-            $this->pass('public/storage', 'Linked');
+            $this->recordPass('public/storage', 'Linked');
         } else {
-            $this->warn('public/storage', 'Not linked. Run: php artisan storage:link (required for public course thumbnails).');
+            $this->recordWarn('public/storage', 'Not linked. Run: php artisan storage:link (required for public course thumbnails).');
         }
 
         // A log directory that cannot be pruned will eventually fill a shared
@@ -269,8 +269,8 @@ final class PlatformDoctor extends Command
         ));
 
         $totalMb > 500
-            ? $this->warn('storage/logs', count($logFiles)." files, ~{$totalMb} MB. Prune old logs; shared hosting quotas are small.")
-            : $this->pass('storage/logs', count($logFiles).' files, ~'.$totalMb.' MB');
+            ? $this->recordWarn('storage/logs', count($logFiles)." files, ~{$totalMb} MB. Prune old logs; shared hosting quotas are small.")
+            : $this->recordPass('storage/logs', count($logFiles).' files, ~'.$totalMb.' MB');
     }
 
     // ── Database ────────────────────────────────────────────────────────────
@@ -278,7 +278,7 @@ final class PlatformDoctor extends Command
     private function checkDatabase(): void
     {
         if ($this->option('skip-database')) {
-            $this->warn('database', 'Skipped (--skip-database)');
+            $this->recordWarn('database', 'Skipped (--skip-database)');
 
             return;
         }
@@ -288,28 +288,28 @@ final class PlatformDoctor extends Command
         // Reported once, as either a pass or a failure — emitting both would let a
         // caller reading the report find the pass first and miss the defect.
         if ($connection === 'sqlite') {
-            $this->fail('DB_CONNECTION', 'sqlite is not supported: the schema uses FULLTEXT indexes and CHECK constraints (docs/04 §0).');
+            $this->recordFail('DB_CONNECTION', 'sqlite is not supported: the schema uses FULLTEXT indexes and CHECK constraints (docs/04 §0).');
 
             return;
         }
 
-        $this->pass('DB_CONNECTION', $connection);
+        $this->recordPass('DB_CONNECTION', $connection);
 
         try {
             DB::connection()->getPdo();
         } catch (Throwable $e) {
-            $this->fail('database connection', $this->safeMessage($e));
+            $this->recordFail('database connection', $this->safeMessage($e));
 
             return;
         }
 
-        $this->pass('database connection', 'Connected');
+        $this->recordPass('database connection', 'Connected');
 
         try {
             $serverVersion = DB::selectOne('SELECT VERSION() AS v');
             $version = (string) ($serverVersion->v ?? 'unknown');
 
-            $this->pass('server version', $version);
+            $this->recordPass('server version', $version);
 
             // MySQL 8 / MariaDB 10.6 minimum: the schema relies on generated
             // columns, CHECK constraint enforcement and utf8mb4 defaults.
@@ -322,15 +322,15 @@ final class PlatformDoctor extends Command
             $collation = DB::selectOne("SELECT @@collation_database AS c");
 
             str_contains((string) ($collation->c ?? ''), 'utf8mb4')
-                ? $this->pass('collation', (string) $collation->c)
-                : $this->fail('collation', (string) ($collation->c ?? 'unknown').' — must be utf8mb4_* or accented names and Yoruba/Igbo diacritics will corrupt.');
+                ? $this->recordPass('collation', (string) $collation->c)
+                : $this->recordFail('collation', (string) ($collation->c ?? 'unknown').' — must be utf8mb4_* or accented names and Yoruba/Igbo diacritics will corrupt.');
         } catch (Throwable $e) {
-            $this->warn('server version', 'Could not read: '.$this->safeMessage($e));
+            $this->recordWarn('server version', 'Could not read: '.$this->safeMessage($e));
         }
 
         try {
             if (! Schema::hasTable('migrations')) {
-                $this->fail('migrations', 'No migrations table. Run: php artisan migrate --force');
+                $this->recordFail('migrations', 'No migrations table. Run: php artisan migrate --force');
 
                 return;
             }
@@ -338,10 +338,10 @@ final class PlatformDoctor extends Command
             $pending = $this->pendingMigrationCount();
 
             $pending > 0
-                ? $this->fail('migrations', "{$pending} pending. Run: php artisan migrate --force")
-                : $this->pass('migrations', 'Up to date');
+                ? $this->recordFail('migrations', "{$pending} pending. Run: php artisan migrate --force")
+                : $this->recordPass('migrations', 'Up to date');
         } catch (Throwable $e) {
-            $this->fail('migrations', $this->safeMessage($e));
+            $this->recordFail('migrations', $this->safeMessage($e));
         }
     }
 
@@ -360,14 +360,14 @@ final class PlatformDoctor extends Command
             $value = (string) config($configKey);
 
             in_array($value, $sharedHostingFriendly, true)
-                ? $this->pass($label, $value)
-                : $this->warn($label, "{$value} — works only if that service is actually available on this host.");
+                ? $this->recordPass($label, $value)
+                : $this->recordWarn($label, "{$value} — works only if that service is actually available on this host.");
         }
 
         if ((string) config('queue.default') === 'database' && ! $this->option('skip-database')) {
             Schema::hasTable('jobs')
-                ? $this->pass('jobs table', 'Present')
-                : $this->fail('jobs table', 'Missing. Run: php artisan migrate --force');
+                ? $this->recordPass('jobs table', 'Present')
+                : $this->recordFail('jobs table', 'Missing. Run: php artisan migrate --force');
         }
 
         // A database queue with no worker running is the most common cause of
@@ -375,8 +375,8 @@ final class PlatformDoctor extends Command
         $scheduleFile = base_path('deploy/cpanel/crontab.txt');
 
         File::exists($scheduleFile)
-            ? $this->pass('cron instructions', 'deploy/cpanel/crontab.txt present')
-            : $this->warn('cron instructions', 'deploy/cpanel/crontab.txt missing — see SETUP.md for the required cron entry.');
+            ? $this->recordPass('cron instructions', 'deploy/cpanel/crontab.txt present')
+            : $this->recordWarn('cron instructions', 'deploy/cpanel/crontab.txt missing — see SETUP.md for the required cron entry.');
 
         // Without a worker, queued jobs (payment webhooks, emails, meeting
         // provisioning) accumulate forever and are never processed.
@@ -384,11 +384,11 @@ final class PlatformDoctor extends Command
             $oldest = DB::table('jobs')->orderBy('available_at')->value('available_at');
 
             if ($oldest !== null && ((int) $oldest) < now()->subMinutes(15)->timestamp) {
-                $this->fail('queue worker', 'Jobs have been waiting more than 15 minutes. Start a worker: php artisan queue:work --stop-when-empty (via cron).');
+                $this->recordFail('queue worker', 'Jobs have been waiting more than 15 minutes. Start a worker: php artisan queue:work --stop-when-empty (via cron).');
             } elseif ($oldest !== null) {
-                $this->pass('queue worker', 'Jobs present but recent');
+                $this->recordPass('queue worker', 'Jobs present but recent');
             } else {
-                $this->pass('queue', 'Empty — nothing waiting');
+                $this->recordPass('queue', 'Empty — nothing waiting');
             }
         } catch (Throwable) {
             // Table may not exist yet; checkDatabase already reported that.
@@ -397,19 +397,19 @@ final class PlatformDoctor extends Command
         $mailFrom = (string) config('mail.from.address');
 
         match (true) {
-            $mailFrom === '' => $this->fail('MAIL_FROM_ADDRESS', 'Empty. Verification and password-reset emails cannot be sent.'),
-            str_contains($mailFrom, 'example.test') && app()->environment('production') => $this->warn(
+            $mailFrom === '' => $this->recordFail('MAIL_FROM_ADDRESS', 'Empty. Verification and password-reset emails cannot be sent.'),
+            str_contains($mailFrom, 'example.test') && app()->environment('production') => $this->recordWarn(
                 'MAIL_FROM_ADDRESS',
                 "{$mailFrom} looks like a placeholder in production."
             ),
-            default => $this->pass('MAIL_FROM_ADDRESS', $mailFrom),
+            default => $this->recordPass('MAIL_FROM_ADDRESS', $mailFrom),
         };
 
         $mailer = (string) config('mail.default');
 
         $mailer === 'log' && app()->environment('production')
-            ? $this->fail('MAIL_MAILER', 'log in production means no email is ever delivered — verification and password reset silently do nothing.')
-            : $this->pass('MAIL_MAILER', $mailer);
+            ? $this->recordFail('MAIL_MAILER', 'log in production means no email is ever delivered — verification and password reset silently do nothing.')
+            : $this->recordPass('MAIL_MAILER', $mailer);
     }
 
     // ── Built assets ────────────────────────────────────────────────────────
@@ -428,12 +428,12 @@ final class PlatformDoctor extends Command
         ])->first(static fn (string $path): bool => File::exists($path));
 
         if ($manifest === null) {
-            $this->fail('public/build manifest', 'Missing. Assets are committed to the repo (ADR-13) — run `npm run build` locally and commit, or restore them from git.');
+            $this->recordFail('public/build manifest', 'Missing. Assets are committed to the repo (ADR-13) — run `npm run build` locally and commit, or restore them from git.');
 
             return;
         }
 
-        $this->pass('public/build manifest', str_replace(public_path('').'/', '', $manifest));
+        $this->recordPass('public/build manifest', str_replace(public_path('').'/', '', $manifest));
 
         try {
             /** @var array<string, array{file?: string}> $entries */
@@ -448,15 +448,15 @@ final class PlatformDoctor extends Command
             }
 
             $missing === []
-                ? $this->pass('built assets', count($entries).' manifest entries, all files present')
-                : $this->fail('built assets', 'Manifest references missing files: '.implode(', ', $missing).'. Rebuild with `npm run build` and commit.');
+                ? $this->recordPass('built assets', count($entries).' manifest entries, all files present')
+                : $this->recordFail('built assets', 'Manifest references missing files: '.implode(', ', $missing).'. Rebuild with `npm run build` and commit.');
         } catch (Throwable $e) {
-            $this->fail('built assets', 'Manifest unreadable: '.$this->safeMessage($e));
+            $this->recordFail('built assets', 'Manifest unreadable: '.$this->safeMessage($e));
         }
 
         File::exists(public_path('.htaccess'))
-            ? $this->pass('public/.htaccess', 'Present')
-            : $this->fail('public/.htaccess', 'Missing — pretty URLs will 404 on Apache shared hosting.');
+            ? $this->recordPass('public/.htaccess', 'Present')
+            : $this->recordFail('public/.htaccess', 'Missing — pretty URLs will 404 on Apache shared hosting.');
     }
 
     // ── Integrations ────────────────────────────────────────────────────────
@@ -472,7 +472,7 @@ final class PlatformDoctor extends Command
             $missing = $integrations->missingRequirements($name);
 
             if ($missing === null) {
-                $this->pass($name, "{$label} — configured");
+                $this->recordPass($name, "{$label} — configured");
 
                 continue;
             }
@@ -480,9 +480,9 @@ final class PlatformDoctor extends Command
             // Disabled on purpose is a valid state; the platform simply does not
             // render the entry point (§63). Enabled-but-incomplete is a defect.
             if ($missing['keys'] === []) {
-                $this->warn($name, "{$label} — disabled. See {$missing['docs']} to turn it on.");
+                $this->recordWarn($name, "{$label} — disabled. See {$missing['docs']} to turn it on.");
             } else {
-                $this->fail($name, "{$label} — enabled but missing: ".implode(', ', $missing['keys']).". See {$missing['docs']}.");
+                $this->recordFail($name, "{$label} — enabled but missing: ".implode(', ', $missing['keys']).". See {$missing['docs']}.");
             }
         }
 
@@ -494,28 +494,28 @@ final class PlatformDoctor extends Command
             $public = (string) config('services.paystack.public');
 
             str_starts_with($secret, 'sk_')
-                ? $this->pass('paystack secret', 'Present and correctly prefixed (never sent to a browser)')
-                : $this->warn('paystack secret', 'Present but does not start with sk_ — verify it is the secret key, not the public one.');
+                ? $this->recordPass('paystack secret', 'Present and correctly prefixed (never sent to a browser)')
+                : $this->recordWarn('paystack secret', 'Present but does not start with sk_ — verify it is the secret key, not the public one.');
 
             if ($public !== '' && $public === $secret) {
-                $this->fail('paystack keys', 'Public and secret keys are identical. One of them is wrong.');
+                $this->recordFail('paystack keys', 'Public and secret keys are identical. One of them is wrong.');
             }
         }
     }
 
     // ── Reporting ───────────────────────────────────────────────────────────
 
-    private function pass(string $label, string $detail): void
+    private function recordPass(string $label, string $detail): void
     {
         $this->results[] = ['group' => $this->group, 'label' => $label, 'status' => 'pass', 'detail' => $detail];
     }
 
-    private function warn(string $label, string $detail): void
+    private function recordWarn(string $label, string $detail): void
     {
         $this->results[] = ['group' => $this->group, 'label' => $label, 'status' => 'warn', 'detail' => $detail];
     }
 
-    private function fail(string $label, string $detail): void
+    private function recordFail(string $label, string $detail): void
     {
         $this->results[] = ['group' => $this->group, 'label' => $label, 'status' => 'fail', 'detail' => $detail];
     }
@@ -589,7 +589,7 @@ final class PlatformDoctor extends Command
     private function noteVersion(string $version, string $minimum, string $flavour): void
     {
         if (preg_match('/(\d+\.\d+)/', $version, $m) && version_compare($m[1], $minimum, '<')) {
-            $this->warn('server version', "{$flavour} {$version} is below the {$minimum} minimum for this schema.");
+            $this->recordWarn('server version', "{$flavour} {$version} is below the {$minimum} minimum for this schema.");
         }
     }
 
