@@ -9,21 +9,22 @@
 #  and enforced CHECK constraints (docs/04 §0) — for example the
 #  "exactly one entitlement target" rule is a CHECK constraint, and SQLite
 #  silently ignores it. A green build on SQLite would therefore prove nothing
-#  about the integrity rules that protect enrolments and payments.
+#  about the integrity rules protecting enrolments and payments.
 #
-#  It uses no real credentials of any kind (§72). Every payment, OAuth and
-#  meeting call in the suite is faked.
+#  No real credentials are used anywhere (§72). Every payment, OAuth and meeting
+#  call in the suite is faked.
 #
-#  Two conventions make failures diagnosable from the annotations API alone,
-#  without downloading the log archive:
+#  Two conventions keep failures diagnosable from the annotations API alone,
+#  without downloading the job log archive (which is served from a different host
+#  and is not reachable from every environment that needs the result):
 #
-#    • Composer runs with --no-scripts, and `artisan package:discover` is a
-#      separate, named step. Composer's post-autoload hook boots the application,
-#      so leaving it inside `composer install` means a broken bootstrap reports
-#      as an opaque "Install PHP dependencies" failure. Here the failure names
-#      the step that actually broke.
-#    • Steps that boot the application capture their output and re-emit the tail
-#      as a `::error::` annotation.
+#    • Composer runs with --no-scripts and `artisan package:discover` is its own
+#      named step. Composer's post-autoload hook boots the application, so
+#      leaving it inside `composer install` makes a broken bootstrap report as an
+#      opaque "Install PHP dependencies" failure.
+#    • Every step whose failure reason is worth reading is wrapped in
+#      .github/scripts/annotated.sh, which duplicates the output tail into a
+#      `::error::` annotation.
 #
 name: CI
 
@@ -37,8 +38,7 @@ permissions:
   contents: read
 
 # A new push to the same branch supersedes the run in flight. Dependency
-# resolution and migrations take minutes, and a stale run's result is not
-# actionable.
+# resolution and migrations take minutes, and a stale result is not actionable.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -53,7 +53,6 @@ env:
   # validation error that fails the whole run before any job is created.
   PHP_VERSION: '8.4'
   NODE_VERSION: '22'
-  # Composer's post-autoload hook is run explicitly instead.
   COMPOSER_NO_INTERACTION: '1'
 
 jobs:
@@ -99,8 +98,8 @@ jobs:
 
       - name: Create the environment file
         # `.env.testing` is committed and governs the test run; `.env` must also
-        # exist because artisan bootstraps from it. Created BEFORE any composer
-        # step so nothing reads a half-populated environment.
+        # exist because artisan bootstraps from it. Created BEFORE any composer or
+        # artisan step so nothing reads a half-populated environment.
         run: |
           cp .env.example .env
           test -f .env.testing && echo ".env.testing present" || echo "::error::.env.testing is missing"
@@ -114,56 +113,65 @@ jobs:
             composer update --prefer-dist --no-progress --no-scripts
           fi
 
+      - name: Lint every PHP source file
+        # Cheap, and it localises a parse error to a file and line instead of
+        # letting it surface as an opaque exit 255 from the first artisan call.
+        # A single reserved word or missing parenthesis in any config, route or
+        # command file kills every artisan invocation at once.
+        run: |
+          errors=""
+          while IFS= read -r file; do
+            if ! msg="$(php -l "$file" 2>&1)"; then
+              errors="${errors}${msg} ;; "
+            fi
+          done < <(find app bootstrap config database routes tests -type f -name '*.php' | sort)
+
+          if [ -n "$errors" ]; then
+            detail="$(printf '%s' "$errors" | cut -c1-1800 | sed -e 's/%/%25/g')"
+            echo "::error title=PHP parse error::${detail}"
+            exit 1
+          fi
+          echo "All PHP source files parse cleanly."
+
       - name: Generate the application key
-        run: php artisan key:generate --force --ansi
+        run: bash .github/scripts/annotated.sh "artisan key:generate" -- php artisan key:generate --force
 
       - name: Discover packages
-        # The step composer's post-autoload hook would have run. Splitting it out
-        # means a boot failure is attributed here, by name.
-        run: php artisan package:discover --ansi
+        # The step composer's post-autoload hook would have run, split out so a
+        # boot failure is attributed here by name.
+        run: bash .github/scripts/annotated.sh "artisan package:discover" -- php artisan package:discover
 
       - name: Verify the application boots
         # `artisan about` boots the kernel and loads every config file, provider
-        # and route file — the same code path every later step depends on.
-        run: |
-          set +e
-          out="$(php artisan about --only=environment,drivers 2>&1)"
-          code=$?
-          set -e
-          echo "$out"
-          if [ "$code" -ne 0 ]; then
-            detail="$(printf '%s' "$out" | tail -6 | tr '\n' ' ' | sed -e 's/%/%25/g')"
-            echo "::error title=artisan failed to boot::${detail}"
-            exit "$code"
-          fi
+        # and route file — the code path every later step depends on.
+        run: bash .github/scripts/annotated.sh "artisan failed to boot" -- php artisan about --only=environment,drivers
 
       - name: Install front-end dependencies
         run: npm ci --no-audit --no-fund
 
       - name: Run migrations against a clean database
         # `--force` is required because the environment is not `local`. A
-        # migration that fails here is a migration that will fail on the
-        # operator's first deploy.
+        # migration that fails here will fail on the operator's first deploy.
         run: |
           php artisan config:clear
-          php artisan migrate:fresh --seed --force --ansi
+          bash .github/scripts/annotated.sh "migrate:fresh --seed" -- php artisan migrate:fresh --seed --force
 
       - name: Report the schedule that cron will drive
         # Not a gate — a record. Shared hosting has no supervisor, so what the
         # single cron entry actually runs is worth having in every build log.
-        run: php artisan schedule:list --ansi || true
+        run: php artisan schedule:list || true
 
       - name: Run the deployment health check
         # Reported, not gated: whether gd or zip is installed on a runner is a
         # property of the runner. The exit code itself is asserted by
         # tests/Feature/PlatformDoctorTest.php.
-        run: php artisan platform:doctor --ansi || true
+        run: bash .github/scripts/annotated.sh "platform:doctor" -- php artisan platform:doctor || true
 
       - name: Run the test suite
         # All four suites: Unit, Feature, Authorization, Payment. phpunit.xml sets
         # failOnWarning, failOnRisky and failOnDeprecation, so a test that
         # silently asserts nothing fails the build rather than passing it (§72).
-        run: vendor/bin/phpunit --colors=always --display-warnings --display-deprecations
+        run: bash .github/scripts/annotated.sh "test suite failed" -- vendor/bin/phpunit --colors=never --display-warnings --display-deprecations
 
   analysis:
     name: Static analysis
@@ -193,31 +201,40 @@ jobs:
             composer update --prefer-dist --no-progress --no-scripts
           fi
 
+      - name: Lint every PHP source file
+        run: |
+          errors=""
+          while IFS= read -r file; do
+            if ! msg="$(php -l "$file" 2>&1)"; then
+              errors="${errors}${msg} ;; "
+            fi
+          done < <(find app bootstrap config database routes tests -type f -name '*.php' | sort)
+
+          if [ -n "$errors" ]; then
+            detail="$(printf '%s' "$errors" | cut -c1-1800 | sed -e 's/%/%25/g')"
+            echo "::error title=PHP parse error::${detail}"
+            exit 1
+          fi
+          echo "All PHP source files parse cleanly."
+
       - name: Generate the application key
         # Larastan boots the application to read its container bindings; a
         # missing key makes that boot noisy in ways unrelated to the code under
         # analysis.
-        run: php artisan key:generate --force --ansi
+        run: bash .github/scripts/annotated.sh "artisan key:generate" -- php artisan key:generate --force
 
       - name: Discover packages
-        run: php artisan package:discover --ansi
+        run: bash .github/scripts/annotated.sh "artisan package:discover" -- php artisan package:discover
 
       - name: Verify the application boots
-        run: |
-          set +e
-          out="$(php artisan about --only=environment 2>&1)"
-          code=$?
-          set -e
-          echo "$out"
-          if [ "$code" -ne 0 ]; then
-            detail="$(printf '%s' "$out" | tail -6 | tr '\n' ' ' | sed -e 's/%/%25/g')"
-            echo "::error title=artisan failed to boot::${detail}"
-            exit "$code"
-          fi
+        run: bash .github/scripts/annotated.sh "artisan failed to boot" -- php artisan about --only=environment
 
       - name: PHPStan (Larastan)
         # Blocking. See phpstan.neon for the level and the escalation plan.
-        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G --error-format=github
+        # `--error-format=raw` rather than `github`: raw output is readable inside
+        # an annotation, whereas the github formatter writes annotations of its
+        # own that cannot carry the full message list.
+        run: bash .github/scripts/annotated.sh "PHPStan found errors" -- vendor/bin/phpstan analyse --no-progress --memory-limit=1G --error-format=raw
 
   assets:
     name: Front-end assets
@@ -277,7 +294,7 @@ jobs:
 
       - name: Install PHP dependencies
         # Pint only parses source; it never boots the application, so no
-        # environment or package discovery is needed here.
+        # environment file or package discovery is needed here.
         run: |
           if [ -f composer.lock ]; then
             composer install --prefer-dist --no-progress --no-scripts
@@ -292,4 +309,4 @@ jobs:
         # switched off — so the output is kept and this step is flipped to
         # blocking immediately after that first normalisation pass.
         continue-on-error: true
-        run: vendor/bin/pint --test -v
+        run: bash .github/scripts/annotated.sh "Pint found style violations" -- vendor/bin/pint --test -v
