@@ -422,12 +422,12 @@ final class Roles
 
         $roles = [];
 
+        // No existence check here, and that is the point: PHPStan can see that
+        // every code in GRANTS is a key of CODES, so a code that is not would be
+        // reported at the GRANTS entry where the typo actually is rather than at
+        // the lookup that trips over it.
         foreach ($granted as $code) {
-            $role = self::CODES[$code] ?? null;
-
-            if ($role !== null) {
-                $roles[] = $role;
-            }
+            $roles[] = self::CODES[$code];
         }
 
         if (in_array('TU', $granted, true)) {
