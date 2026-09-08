@@ -171,7 +171,18 @@ jobs:
         # All four suites: Unit, Feature, Authorization, Payment. phpunit.xml sets
         # failOnWarning, failOnRisky and failOnDeprecation, so a test that
         # silently asserts nothing fails the build rather than passing it (§72).
-        run: bash .github/scripts/annotated.sh "test suite failed" -- vendor/bin/phpunit --colors=never --display-warnings --display-deprecations
+        #
+        # --log-junit feeds the reporting step below.
+        run: bash .github/scripts/annotated.sh "test suite failed" -- vendor/bin/phpunit --colors=never --display-warnings --display-deprecations --log-junit junit.xml
+
+      - name: Report each failing test as its own annotation
+        # A failing assertSee prints the entire rendered page into its message, so
+        # one bad test can consume the whole annotation budget for the step above
+        # and hide the others. The JUnit log has one record per test, so this
+        # names every failure separately and keeps the head and tail of each
+        # message — the tail being where PHPUnit states what it could not find.
+        if: always()
+        run: python3 .github/scripts/report-junit.py junit.xml
 
   analysis:
     name: Static analysis

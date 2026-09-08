@@ -32,7 +32,12 @@ final class PlatformBootsTest extends TestCase
         $response = $this->get('/');
 
         $response->assertOk();
-        $response->assertSee((string) config('platform.name'), false);
+
+        // Escaped comparison (the assertSee default): the name is rendered through
+        // {{ }}, so Blade has already turned any & into &amp;. Asserting the raw
+        // config string against raw HTML would never match once a name contains
+        // an ampersand.
+        $response->assertSee((string) config('platform.name'));
 
         // Compiled CSS must be linked, or every page renders unstyled. A missing
         // manifest is the classic symptom of deploying without `npm run build`
@@ -47,7 +52,12 @@ final class PlatformBootsTest extends TestCase
         $response->assertOk();
 
         foreach ((array) config('platform.modules') as $module) {
-            $response->assertSee((string) $module['label'], false);
+            // Escaped, for the same reason as above and more urgently here: six of
+            // the nine labels contain an ampersand ("Identity & Access", "Tutors &
+            // Booking", ...) and the page renders them as "Identity &amp; Access".
+            // assertSee(..., false) compares the literal config string against raw
+            // HTML, so every one of those six failed no matter what the page did.
+            $response->assertSee((string) $module['label']);
         }
 
         // §63: a module may only be presented as navigable if its route really

@@ -43,3 +43,6 @@ Thumbs.db
 *.sql
 *.sql.gz
 *.sqlite
+
+# PHPUnit JUnit log written by CI for per-test failure reporting
+junit.xml
