@@ -125,7 +125,7 @@ final class NotificationPreferencePersistenceTest extends TestCase
         // is; ordinary deactivation is a soft delete and keeps everything.
         $user->forceDelete();
 
-        $this->assertSame(0, NotificationPreference::count());
+        $this->assertSame(0, NotificationPreference::where('user_id', $user->id)->count());
         $this->assertFalse(User::withTrashed()->whereKey($user->id)->exists());
     }
 }

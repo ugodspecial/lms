@@ -33,8 +33,9 @@ final class PermissionGateTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @var bool */
-    protected $seed = true;
+    // Seeding is owned by Tests\TestCase, which explains why it cannot live here:
+    // `migrate:fresh --seed` runs once per process and takes the flag from
+    // whichever class happens to run first.
 
     public function test_a_permission_held_through_a_role_passes_can(): void
     {

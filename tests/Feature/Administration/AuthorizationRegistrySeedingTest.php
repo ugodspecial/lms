@@ -33,8 +33,9 @@ final class AuthorizationRegistrySeedingTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @var bool */
-    protected $seed = true;
+    // Seeding is owned by Tests\TestCase, which explains why it cannot live here:
+    // `migrate:fresh --seed` runs once per process and takes the flag from
+    // whichever class happens to run first.
 
     /** @var array{summary: array{pass: int, warn: int, fail: int}, checks: list<array{group: string, label: string, status: string, detail: string}>}|null */
     private ?array $cachedReport = null;

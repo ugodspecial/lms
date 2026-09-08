@@ -41,8 +41,9 @@ final class PortalAreaAccessTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @var bool */
-    protected $seed = true;
+    // Seeding is owned by Tests\TestCase, which explains why it cannot live here:
+    // `migrate:fresh --seed` runs once per process and takes the flag from
+    // whichever class happens to run first.
 
     /** The five portal areas. `api` is not one: it is authorized by token ability (§42). */
     private const AREAS = ['admin', 'student', 'parent', 'tutor', 'evaluator'];

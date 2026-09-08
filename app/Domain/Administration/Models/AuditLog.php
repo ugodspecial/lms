@@ -115,8 +115,11 @@ class AuditLog extends Model
     }
 
     /**
-     * @param  Builder<AuditLog>  $query
-     * @return bool
+     * The generic must read `static`, exactly as the parent declares it. A
+     * concrete `Builder<Model>` here is a narrower parameter type than the parent
+     * accepts, which is an LSP violation the analyser reports and PHP does not.
+     *
+     * @param  Builder<static>  $query
      *
      * @throws LogicException
      */
@@ -129,8 +132,6 @@ class AuditLog extends Model
     }
 
     /**
-     * @return bool|null
-     *
      * @throws LogicException
      */
     public function delete(): ?bool

@@ -79,7 +79,7 @@ final class AdministrationPersistenceTest extends TestCase
             $this->assertStringContainsString('visibility', $e->getMessage());
         }
 
-        $this->assertSame(0, File::count());
+        $this->assertDatabaseMissing('files', ['path' => 'documents/report-card.pdf']);
     }
 
     public function test_a_file_is_given_a_uuid_because_its_id_must_not_appear_in_a_url(): void
@@ -121,7 +121,8 @@ final class AdministrationPersistenceTest extends TestCase
 
         $this->assertTrue($file->fileable->is($owner), 'the polymorphic owner resolves');
         $this->assertTrue($file->uploader->is($uploader));
-        $this->assertSame(['width' => 800, 'height' => 600], $file->meta);
+        // assertEquals, not assertSame: a JSON column does not preserve key order.
+        $this->assertEquals(['width' => 800, 'height' => 600], $file->meta);
         $this->assertSame(FileCategory::ProfilePhoto, $file->category);
         $this->assertSame(FileVisibility::IsPrivate, $file->visibility);
         $this->assertSame(20480, $file->size_bytes);
@@ -132,23 +133,23 @@ final class AdministrationPersistenceTest extends TestCase
 
     public function test_a_setting_key_is_unique(): void
     {
-        $this->makeSetting('platform.currency', 'NGN');
+        $this->makeSetting('tests.unique_key', 'NGN');
 
         // Two rows for one key means two answers to "what is the currency", and
         // whichever one a query happens to return first wins.
         $this->expectException(QueryException::class);
 
-        $this->makeSetting('platform.currency', 'USD');
+        $this->makeSetting('tests.unique_key', 'USD');
     }
 
     public function test_the_client_exposed_scope_never_returns_a_secret(): void
     {
-        $this->makeSetting('organization.name', 'Academy', SettingType::Text, ['is_public' => true, 'group' => 'organization']);
-        $this->makeSetting('payments.paystack_secret_key', 'sk_test_not_a_real_key', SettingType::Text, [
+        $this->makeSetting('tests.organization_name', 'Academy', SettingType::Text, ['is_public' => true, 'group' => 'organization']);
+        $this->makeSetting('tests.paystack_secret_key', 'sk_test_not_a_real_key', SettingType::Text, [
             'is_secret' => true,
             'group' => 'payments',
         ]);
-        $this->makeSetting('platform.maintenance_notice', 'Down on Sunday', SettingType::Text);
+        $this->makeSetting('tests.maintenance_notice', 'Down on Sunday', SettingType::Text);
 
         $keys = Setting::exposedToClient()->pluck('key')->all();
 
@@ -156,9 +157,12 @@ final class AdministrationPersistenceTest extends TestCase
         // deny-by-default at the presentation boundary. A setting is exposed only
         // when it was declared public AND never declared secret — one flag cannot
         // override the other.
-        $this->assertSame(['organization.name'], $keys);
-        $this->assertNotContains('payments.paystack_secret_key', $keys);
-        $this->assertNotContains('platform.maintenance_notice', $keys, 'unset is not public');
+        //
+        // Membership, not the whole list: the database is seeded for the suite, and
+        // a seeded setting that is correctly public must not fail this test.
+        $this->assertContains('tests.organization_name', $keys);
+        $this->assertNotContains('tests.paystack_secret_key', $keys);
+        $this->assertNotContains('tests.maintenance_notice', $keys, 'unset is not public');
     }
 
     public function test_the_columns_that_describe_how_a_setting_behaves_cannot_be_posted(): void
@@ -182,21 +186,28 @@ final class AdministrationPersistenceTest extends TestCase
     {
         // The JSON column stores whatever was written, so the declared type is the
         // only thing that makes a comparison meaningful later.
-        $this->assertSame('NGN', $this->makeSetting('platform.currency', 'NGN')->fresh()->typedValue());
-        $this->assertSame(3, $this->makeSetting('academic.terms_per_year', '3', SettingType::Integer)->fresh()->typedValue());
-        $this->assertTrue($this->makeSetting('platform.registration_open', true, SettingType::Boolean)->fresh()->typedValue());
-        $this->assertSame(7.5, $this->makeSetting('commerce.tax_rate', '7.50', SettingType::Decimal)->fresh()->typedValue());
+        $this->assertSame('NGN', $this->makeSetting('tests.currency', 'NGN')->fresh()->typedValue());
+        $this->assertSame(3, $this->makeSetting('tests.terms_per_year', '3', SettingType::Integer)->fresh()->typedValue());
+        $this->assertTrue($this->makeSetting('tests.registration_open', true, SettingType::Boolean)->fresh()->typedValue());
+        $this->assertSame(7.5, $this->makeSetting('tests.tax_rate', '7.50', SettingType::Decimal)->fresh()->typedValue());
 
         $scale = [['code' => 'A', 'min' => 70], ['code' => 'B', 'min' => 60]];
-        $this->assertSame(
+
+        // assertEquals, and the reason is worth knowing: MySQL 8 normalises JSON
+        // objects and sorts their keys (by length, then bytewise), so `code`/`min`
+        // comes back as `min`/`code`. What a caller may depend on is the contents;
+        // the order it wrote them in is not preserved, and an assertion that
+        // assumed otherwise would pass against a fixture and fail against the
+        // database the platform actually runs on.
+        $this->assertEquals(
             $scale,
-            $this->makeSetting('academic.grade_scale', $scale, SettingType::Json)->fresh()->typedValue()
+            $this->makeSetting('tests.grade_scale', $scale, SettingType::Json)->fresh()->typedValue()
         );
     }
 
     public function test_a_choice_setting_validates_against_the_list_it_stored(): void
     {
-        $setting = $this->makeSetting('platform.default_video_provider', 'manual', SettingType::Choice, [
+        $setting = $this->makeSetting('tests.default_video_provider', 'manual', SettingType::Choice, [
             'allowed_values' => ['manual', 'google_meet', 'zoom'],
         ])->fresh();
 
@@ -295,6 +306,6 @@ final class AdministrationPersistenceTest extends TestCase
         $removed = AuditLog::where('created_at', '<', Carbon::now()->subMonths(18))->delete();
 
         $this->assertSame(1, $removed);
-        $this->assertSame(2, AuditLog::count());
+        $this->assertSame(2, AuditLog::ofEvent('orders.created')->count());
     }
 }

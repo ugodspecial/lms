@@ -58,7 +58,11 @@ final class IdentityPersistenceTest extends TestCase
 
         $this->assertInstanceOf(User::class, $user);
         $this->assertTrue($user->exists);
-        $this->assertSame(1, User::count());
+
+        // Asserted against this user rather than a global count: the suite runs on a
+        // seeded database (see Tests\TestCase), so "how many rows are there" is not
+        // a question a test owns.
+        $this->assertDatabaseHas('users', ['email' => $user->email]);
         $this->assertNotNull(
             $user->email_verified_at,
             'a factory constructs inside Model::unguarded(), so it sets columns the fillable list refuses to a request'

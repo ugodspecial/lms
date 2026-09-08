@@ -35,6 +35,12 @@ use Illuminate\Support\Str;
  * about the guards these tests exist to check. `User::factory()` is used for users
  * only, where the interesting assertion is the fillable list itself and the
  * factory's own columns (`email_verified_at`, `remember_token`) are not part of it.
+ *
+ * EVERY BUILDER INSERTS EXACTLY ONCE. Overrides are applied before `save()`, never
+ * after: `Consent` and `AuditLog` refuse to be updated at all, so "insert then
+ * amend" is not available for them, and a second write on any of these models
+ * would be an UPDATE the record does not otherwise have. Setting a column up front
+ * is also what an application service does.
  */
 trait BuildsPhaseOneRecords
 {
@@ -43,9 +49,14 @@ trait BuildsPhaseOneRecords
      */
     protected function makeUser(array $overrides = []): User
     {
-        $user = User::factory()->create();
+        // The factory is the right tool here: it sets the columns the fillable list
+        // refuses to a request, which is exactly what a fixture needs to do.
+        $user = User::factory()->make();
 
-        return $this->apply($user, $overrides);
+        $this->stamp($user, $overrides);
+        $user->save();
+
+        return $user;
     }
 
     /**
@@ -75,9 +86,10 @@ trait BuildsPhaseOneRecords
             $file->fileable_id = $owner->getKey();
         }
 
+        $this->stamp($file, $overrides);
         $file->save();
 
-        return $this->apply($file, $overrides);
+        return $file;
     }
 
     /**
@@ -96,9 +108,11 @@ trait BuildsPhaseOneRecords
         $account->provider_user_id = 'external-'.Str::random(12);
         $account->access_token = 'access-'.Str::random(24);
         $account->status = ConnectedAccountStatus::Connected;
+
+        $this->stamp($account, $overrides);
         $account->save();
 
-        return $this->apply($account, $overrides);
+        return $account;
     }
 
     /**
@@ -117,9 +131,11 @@ trait BuildsPhaseOneRecords
         $consent->granted = $granted;
         $consent->ip_address = '203.0.113.7';
         $consent->user_agent = 'PHPUnit';
+
+        $this->stamp($consent, $overrides);
         $consent->save();
 
-        return $this->apply($consent, $overrides);
+        return $consent;
     }
 
     /**
@@ -142,9 +158,10 @@ trait BuildsPhaseOneRecords
             $log->auditable_id = $subject->getKey();
         }
 
+        $this->stamp($log, $overrides);
         $log->save();
 
-        return $this->apply($log, $overrides);
+        return $log;
     }
 
     /**
@@ -161,9 +178,11 @@ trait BuildsPhaseOneRecords
         $setting->key = $key;
         $setting->value = $value;
         $setting->type = $type;
+
+        $this->stamp($setting, $overrides);
         $setting->save();
 
-        return $this->apply($setting, $overrides);
+        return $setting;
     }
 
     /**
@@ -177,14 +196,18 @@ trait BuildsPhaseOneRecords
         $preference = new NotificationPreference;
         $preference->user_id = $user->id;
         $preference->notification_key = $notificationKey;
+
+        $this->stamp($preference, $overrides);
         $preference->save();
 
-        return $this->apply($preference, $overrides);
+        return $preference;
     }
 
     /**
-     * Writes the columns a test needs that the model will not accept from an
-     * array, then persists them.
+     * Sets the columns a test needs that the model will not accept from an array.
+     *
+     * Deliberately does not save: the caller saves once, so that append-only models
+     * are not asked to update themselves.
      *
      * @template TModel of Model
      *
@@ -192,14 +215,10 @@ trait BuildsPhaseOneRecords
      * @param  array<string, mixed>  $overrides
      * @return TModel
      */
-    private function apply(Model $model, array $overrides): Model
+    private function stamp(Model $model, array $overrides): Model
     {
         foreach ($overrides as $column => $value) {
             $model->setAttribute($column, $value);
-        }
-
-        if ($overrides !== []) {
-            $model->save();
         }
 
         return $model;
