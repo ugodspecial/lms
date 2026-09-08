@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Support\Time\TimezonePresenter;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
@@ -22,7 +23,7 @@ final class PlatformBootsTest extends TestCase
 {
     public function test_the_application_boots(): void
     {
-        $this->assertInstanceOf(\Illuminate\Contracts\Foundation\Application::class, $this->app);
+        $this->assertInstanceOf(Application::class, $this->app);
         $this->assertSame('testing', $this->app->environment());
     }
 

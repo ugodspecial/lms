@@ -33,7 +33,12 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
-        <env name="APP_KEY" value="base64:dGVzdGluZ2tleXRoYXRpczMyYnl0ZXNsb25nb2s=" />
+        <!--
+            APP_KEY is deliberately NOT set here. PHPUnit's <env> entries and
+            .env.testing both feed the same process environment and the winner
+            depends on load order, so declaring a key in both places makes the
+            effective one impossible to reason about. .env/testing owns it.
+        -->
         <env name="APP_URL" value="http://localhost"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>

@@ -9,6 +9,7 @@ use App\Support\Time\TimezonePresenter;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
+use Throwable;
 
 /**
  * Timezone resolution and UTC conversion (§62, ADR-08).
@@ -166,7 +167,7 @@ final class TimezonePresenterTest extends TestCase
         foreach ($choices as $identifier) {
             try {
                 Carbon::now($identifier);
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 $this->fail("Timezone picker offered an unusable identifier [{$identifier}]: {$e->getMessage()}");
             }
         }

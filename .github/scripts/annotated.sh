@@ -40,12 +40,12 @@ echo "────────────────────────�
 if [ "$code" -ne 0 ]; then
     lines="$(printf '%s' "$output" | wc -l | tr -d ' ')"
 
-    if [ "$lines" -le 45 ]; then
+    if [ "$lines" -le 280 ]; then
         excerpt="$output"
     else
-        head_part="$(printf '%s' "$output" | head -30)"
-        tail_part="$(printf '%s' "$output" | tail -12)"
-        dropped=$((lines - 42))
+        head_part="$(printf '%s' "$output" | head -200)"
+        tail_part="$(printf '%s' "$output" | tail -80)"
+        dropped=$((lines - 280))
         excerpt="${head_part}
 ...[${dropped} lines omitted]...
 ${tail_part}"
@@ -56,7 +56,7 @@ ${tail_part}"
         | sed -e 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
         | tr '\n\r' '||' \
         | sed -e 's/%/%25/g' \
-        | cut -c1-6000)"
+        | cut -c1-20000)"
 
     echo "::error title=${title} (exit ${code})::${detail}"
 fi

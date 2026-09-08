@@ -303,10 +303,7 @@ jobs:
           fi
 
       - name: Pint
-        # Non-blocking until the tree has been normalised once with
-        # `vendor/bin/pint` on a machine that has PHP. Formatting must never be
-        # the reason a phase cannot ship, but it must also never be silently
-        # switched off — so the output is kept and this step is flipped to
-        # blocking immediately after that first normalisation pass.
-        continue-on-error: true
+        # Blocking. The tree is now normalised against the plain Laravel preset
+        # (see pint.json), so a violation here means real drift rather than the
+        # first-pass churn this step used to be exempted from.
         run: bash .github/scripts/annotated.sh "Pint found style violations" -- vendor/bin/pint --test -v

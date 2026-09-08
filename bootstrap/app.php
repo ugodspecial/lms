@@ -1,9 +1,15 @@
 <?php
 
+use App\Exceptions\PlatformException;
+use App\Http\Middleware\AuthenticateArea;
+use App\Http\Middleware\EnsureIntegrationConfigured;
+use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\SetUserTimezone;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -34,21 +40,21 @@ return Application::configure(basePath: dirname(__DIR__))
         // Portal scoping: every authenticated area re-authorizes on every
         // request, including Livewire updates (docs/01 §5.1).
         $middleware->alias([
-            'area' => \App\Http\Middleware\AuthenticateArea::class,
-            'timezone' => \App\Http\Middleware\SetUserTimezone::class,
-            'integration.connected' => \App\Http\Middleware\EnsureIntegrationConfigured::class,
+            'area' => AuthenticateArea::class,
+            'timezone' => SetUserTimezone::class,
+            'integration.connected' => EnsureIntegrationConfigured::class,
         ]);
 
         // Webhook routes: no CSRF (they are HMAC-verified instead), no session,
         // no cookie encryption of the body. The signature middleware for each
         // provider is attached per-route so the raw body stays intact (§42).
         $middleware->group('webhooks', [
-            \Illuminate\Routing\Middleware\ThrottleRequests::class.':webhooks',
+            ThrottleRequests::class.':webhooks',
         ]);
 
         $middleware->web(append: [
-            \App\Http\Middleware\SetUserTimezone::class,
-            \App\Http\Middleware\SecurityHeaders::class,
+            SetUserTimezone::class,
+            SecurityHeaders::class,
         ]);
 
         // Fortify registers `login` in Phase 1; until then fall back rather than
@@ -64,7 +70,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Domain exceptions carry a machine-readable code so the future /api/v1
         // and the web UI can both react precisely (§68, §76).
-        $exceptions->render(function (\App\Exceptions\PlatformException $e, Request $request) {
+        $exceptions->render(function (PlatformException $e, Request $request) {
             if ($request->is('api/*') || $request->is('webhooks/*') || $request->expectsJson()) {
                 return response()->json($e->toApiResponse(), $e->getStatusCode());
             }

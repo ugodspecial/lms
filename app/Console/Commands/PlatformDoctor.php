@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Commerce\ValueObjects\Currency;
 use App\Http\Middleware\EnsureIntegrationConfigured;
 use Illuminate\Console\Command;
+use Illuminate\Database\Migrations\MigrationRepositoryInterface;
+use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
@@ -206,7 +209,7 @@ final class PlatformDoctor extends Command
 
         $currency = (string) config('platform.currency');
 
-        in_array($currency, \App\Domain\Commerce\ValueObjects\Currency::available(), true)
+        in_array($currency, Currency::available(), true)
             ? $this->recordPass('platform.currency', $currency)
             : $this->recordFail('platform.currency', "{$currency} is not defined in config/platform.php 'currencies'.");
     }
@@ -319,7 +322,7 @@ final class PlatformDoctor extends Command
                 $this->noteVersion($version, '8.0', 'MySQL');
             }
 
-            $collation = DB::selectOne("SELECT @@collation_database AS c");
+            $collation = DB::selectOne('SELECT @@collation_database AS c');
 
             str_contains((string) ($collation->c ?? ''), 'utf8mb4')
                 ? $this->recordPass('collation', (string) $collation->c)
@@ -541,7 +544,18 @@ final class PlatformDoctor extends Command
     private function renderTable(): void
     {
         $this->newLine();
-        $this->components->title('Platform health check');
+
+        // There is no `title` console component; the factory resolves
+        // $this->components->x() to Illuminate\Console\View\Components\X::render()
+        // and throws for anything it cannot find. twoColumnDetail is the closest
+        // thing to a section heading and is already used for the group headers.
+        //
+        // The second argument must be an explicit '' rather than left to default
+        // to null: the component's view guards on `$second !== ''` and then calls
+        // htmlspecialchars() on it, so null reaches a non-nullable string
+        // parameter and PHP emits a deprecation — which phpunit.xml promotes to a
+        // test failure via failOnDeprecation.
+        $this->components->twoColumnDetail('<fg=white;options=bold>PLATFORM HEALTH CHECK</>', '');
 
         $summary = $this->summary();
 
@@ -551,7 +565,7 @@ final class PlatformDoctor extends Command
             if ($result['group'] !== $currentGroup) {
                 $currentGroup = $result['group'];
                 $this->newLine();
-                $this->components->twoColumnDetail('<fg=white;options=bold>'.strtoupper($currentGroup).'</>');
+                $this->components->twoColumnDetail('<fg=white;options=bold>'.strtoupper($currentGroup).'</>', '');
             }
 
             $marker = match ($result['status']) {
@@ -605,10 +619,10 @@ final class PlatformDoctor extends Command
      */
     private function pendingMigrationCount(): int
     {
-        /** @var \Illuminate\Database\Migrations\MigrationRepositoryInterface $repository */
+        /** @var MigrationRepositoryInterface $repository */
         $repository = app('migration.repository');
 
-        /** @var \Illuminate\Database\Migrations\Migrator $migrator */
+        /** @var Migrator $migrator */
         $migrator = app('migrator');
 
         $files = $migrator->getMigrationFiles(database_path('migrations'));
