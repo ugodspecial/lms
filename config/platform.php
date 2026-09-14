@@ -242,7 +242,13 @@ return [
             'password', 'password_confirmation', 'current_password', 'new_password',
             'token', 'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey',
             'secret', 'client_secret', 'secret_key', 'private_key',
-            'two_factor_secret', 'two_factor_recovery_codes', 'otp', 'code',
+            'two_factor_secret', 'two_factor_recovery_codes', 'otp',
+            // Named `*_code` entries rather than a bare `code` or a `*_code`
+            // wildcard. Coupons, subjects, grades, cohorts and countries all have
+            // a `code`, and blanking it would erase the exact values an audit
+            // entry exists to record; a wildcard would also catch `country_code`
+            // and `postal_code`. `otp` already covers `otp_code` by prefix.
+            'verification_code', 'reset_code', 'confirmation_code',
             'card', 'card_number', 'cvv', 'cvc', 'exp_month', 'exp_year',
             'authorization', 'cookie', 'set_cookie', 'x-paystack-signature',
             'sk_', 'pk_',

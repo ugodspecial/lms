@@ -12,12 +12,14 @@ declare(strict_types=1);
 | lives in domain services and actions (ADR-14) — never in a helper, because a
 | helper cannot be dependency-injected, mocked or unit-tested in isolation.
 |
-| Phase 0 ships only the helpers whose dependencies are pure (no database).
-| `setting()` arrives in Phase 1 together with the `settings` table and
-| SettingsService.
+| Phase 0 shipped only the helpers whose dependencies are pure (no database).
+| Phase 1 adds `setting()`, which reads the `settings` table through
+| SettingsService — the point of §82's "nothing business-critical is
+| hard-coded", reachable from a Blade file without injecting a service.
 |
 */
 
+use App\Domain\Administration\Services\SettingsService;
 use App\Support\Money\MoneyFormatter;
 use App\Support\Time\TimezonePresenter;
 use Illuminate\Support\Carbon;
@@ -76,5 +78,27 @@ if (! function_exists('feature_enabled')) {
     function feature_enabled(string $feature): bool
     {
         return (bool) config("platform.features.{$feature}", false);
+    }
+}
+
+if (! function_exists('setting')) {
+    /**
+     * Read a business value from the `settings` table (§60, §82, docs/01 §5.3).
+     *
+     * The default is a parameter and not a config lookup on purpose. Falling back
+     * to `config()` by key name would make `setting('app.key')` and
+     * `setting('services.paystack.secret')` return the very secrets §30.7 keeps in
+     * `.env`, so the caller decides what a missing value means — and where a
+     * config equivalent exists, that is what should be passed:
+     *
+     *     setting('platform.currency', config('platform.currency'))
+     *
+     * One place holds the fallback then, and the setting overrides it. Secrets
+     * (`is_secret`) are filtered out by SettingsService and always yield the
+     * default, so this helper cannot read one no matter what key it is given.
+     */
+    function setting(string $key, mixed $default = null): mixed
+    {
+        return app(SettingsService::class)->get($key, $default);
     }
 }

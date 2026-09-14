@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Administration\Enums\SettingGroup;
 use App\Domain\Administration\Enums\SettingType;
 use App\Support\Enums\EnumSchema;
 use Illuminate\Database\Migrations\Migration;
@@ -45,9 +46,12 @@ return new class extends Migration
         Schema::create('settings', function (Blueprint $table) {
             $table->id();
 
-            // organization | academic | commerce | payments | video |
-            // notifications | security. Indexed because the admin settings screen
-            // is tabbed by group and loads one group at a time.
+            // SettingGroup: organization | academic | commerce | payments | video
+            // | notifications | security | operations. Constrained by a CHECK
+            // below and indexed because the admin settings screen is tabbed by
+            // group and loads one group at a time. The group is not cosmetic — it
+            // decides which permission a write is authorized against
+            // (SettingGroup::requiredPermission(), docs/05 §3.9).
             $table->string('group', 40)->index();
 
             $table->string('key', 120)->unique();
@@ -70,6 +74,7 @@ return new class extends Migration
         });
 
         DB::statement('ALTER TABLE settings ADD '.EnumSchema::check('settings', 'type', SettingType::class));
+        DB::statement('ALTER TABLE settings ADD '.EnumSchema::check('settings', 'group', SettingGroup::class));
 
         // A secret setting that is also public is a contradiction, and the
         // resolution would depend on which flag a given code path checks first.

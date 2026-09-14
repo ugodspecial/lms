@@ -32,8 +32,8 @@ use LogicException;
  * There is no `updated_at` column — `UPDATED_AT` is null so Eloquent never tries
  * to write one.
  *
- * `old_values` / `new_values` are expected to arrive already redacted by
- * SensitiveDataScrubber (a later Phase-1 slice). The scrubbing happens on write,
+ * `old_values` / `new_values` arrive already redacted: AuditLogger runs every
+ * payload through SensitiveDataScrubber before it inserts. The scrubbing happens on write,
  * not on render: this table is readable by administrators, so a stored password
  * hash or 2FA secret would make the audit log the most valuable table in the
  * database, and hiding it in the UI would not change that (§77).

@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Administration\Models\AuditLog;
+use App\Domain\Administration\Models\Setting;
 use App\Domain\Administration\Permissions;
+use App\Domain\Administration\Policies\AuditLogPolicy;
+use App\Domain\Administration\Policies\SettingPolicy;
 use App\Domain\Administration\Roles;
 use App\Domain\Identity\Models\User;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -33,11 +37,17 @@ use Spatie\Permission\Exceptions\PermissionDoesNotExist;
  * from a before callback is a veto that stops the policies from running at all,
  * and the whole point of the fallthrough is that a model-level check —
  * `$user->can('view', $student)` — must still get its turn.
+ *
+ * A third job arrives with the policies: registering them by hand, because
+ * Laravel's convention-based discovery looks under `App\Models` and
+ * `App\Policies`, neither of which this project uses.
  */
 final class AuthServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
+        $this->registerPolicies();
+
         Gate::before(function (Authenticatable $user, string $ability): ?bool {
             // Typed as Authenticatable and narrowed here rather than typed as User:
             // a before callback that cannot be called with the current principal
@@ -74,5 +84,22 @@ final class AuthServiceProvider extends ServiceProvider
                 return null;
             }
         });
+    }
+
+    /**
+     * Model-to-policy bindings for the domain namespaces.
+     *
+     * Explicit registration is not a preference here. Laravel discovers a policy
+     * by convention — `App\Models\Order` finds `App\Policies\OrderPolicy` — and
+     * this project keeps neither models nor policies under those namespaces
+     * (ADR-01: domains own their own Models/, Policies/ and Services/ trees). An
+     * undiscovered policy fails the same quiet way the permission mapping above
+     * does: `$user->can('update', $setting)` simply returns false for everybody,
+     * including everybody who should be allowed, and nothing throws.
+     */
+    private function registerPolicies(): void
+    {
+        Gate::policy(Setting::class, SettingPolicy::class);
+        Gate::policy(AuditLog::class, AuditLogPolicy::class);
     }
 }

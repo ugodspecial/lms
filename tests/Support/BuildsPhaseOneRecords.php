@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Administration\Enums\FileCategory;
 use App\Domain\Administration\Enums\FileVisibility;
+use App\Domain\Administration\Enums\SettingGroup;
 use App\Domain\Administration\Enums\SettingType;
 use App\Domain\Administration\Models\AuditLog;
 use App\Domain\Administration\Models\File;
@@ -174,7 +175,7 @@ trait BuildsPhaseOneRecords
         array $overrides = [],
     ): Setting {
         $setting = new Setting;
-        $setting->group = 'platform';
+        $setting->group = SettingGroup::Organization;
         $setting->key = $key;
         $setting->value = $value;
         $setting->type = $type;

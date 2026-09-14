@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Administration\Models;
 
+use App\Domain\Administration\Enums\SettingGroup;
 use App\Domain\Administration\Enums\SettingType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -29,6 +30,8 @@ use Illuminate\Database\Eloquent\Model;
  * or an export — the payment secret keys live here (§30.7), and the rule is
  * deny-by-default at the presentation boundary.
  *
+ * @property SettingGroup $group
+ * @property string $key
  * @property SettingType $type
  * @property bool $is_secret
  * @property bool $is_public
@@ -42,6 +45,7 @@ class Setting extends Model
     protected function casts(): array
     {
         return [
+            'group' => SettingGroup::class,
             'value' => 'array',
             'allowed_values' => 'array',
             'type' => SettingType::class,
@@ -51,12 +55,18 @@ class Setting extends Model
     }
 
     /**
+     * One tab of the admin settings screen.
+     *
+     * Typed as the enum rather than a string because the group decides which
+     * permission applies (SettingGroup::requiredPermission()), and a typo'd
+     * string would silently select nothing instead of failing.
+     *
      * @param  Builder<Setting>  $query
      * @return Builder<Setting>
      */
-    public function scopeInGroup(Builder $query, string $group): Builder
+    public function scopeInGroup(Builder $query, SettingGroup $group): Builder
     {
-        return $query->where('group', $group);
+        return $query->where('group', $group->value);
     }
 
     /**

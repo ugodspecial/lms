@@ -30,7 +30,7 @@ final class SettingModelTest extends TestCase
     private function setting(SettingType $type, mixed $value): Setting
     {
         return new Setting([
-            'group' => 'platform',
+            'group' => 'organization',
             'key' => 'test.key',
             'value' => $value,
             'type' => $type,
