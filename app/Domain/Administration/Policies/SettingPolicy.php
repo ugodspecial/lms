@@ -6,8 +6,7 @@ namespace App\Domain\Administration\Policies;
 
 use App\Domain\Administration\Enums\SettingGroup;
 use App\Domain\Administration\Models\Setting;
-use App\Domain\Administration\Permissions;
-use App\Domain\Administration\Roles;
+use App\Domain\Administration\ScopedGrants;
 use App\Domain\Identity\Models\User;
 
 /**
@@ -27,10 +26,13 @@ use App\Domain\Identity\Models\User;
  *
  * `Permissions::SCOPED` is the registry of exactly those qualifications, kept
  * separate from the grants so that a permission can be true and still not be
- * sufficient. Reading the qualifier from the registry rather than hard-coding it
- * here means the matrix stays the single source of truth: change a role's scope
- * in one array and the policy follows, and `platform:audit-authorization`
- * (Phase 11) can compare the two without parsing prose.
+ * sufficient, and `ScopedGrants` is the one reader of it — shared with FilePolicy,
+ * because two policies interpreting the same registry slightly differently is not
+ * a bug anybody can see. Reading the qualifier from the registry rather than
+ * hard-coding it here means the matrix stays the single source of truth: change a
+ * role's scope in one array and the policy follows, and
+ * `platform:audit-authorization` (Phase 11) can compare the two without parsing
+ * prose.
  *
  * A role that holds the permission with NO qualifier holds it outright — that is
  * the Administrator, and it is why the loop below returns true on the first
@@ -92,7 +94,7 @@ final class SettingPolicy
         // configures a key or a callback URL; live mode is where a mistake moves
         // real money (§30.7, §34).
         if ($group === SettingGroup::Payments
-            && $this->holdsOnlyQualified($user, $required)
+            && ScopedGrants::holdsOnlyQualified($user, $required)
             && config('services.paystack.mode') === 'live') {
             return false;
         }
@@ -142,79 +144,20 @@ final class SettingPolicy
     /**
      * Whether one of the user's roles grants this permission for this group.
      *
-     * @param  string  $permission  a permission listed in Permissions::SCOPED
+     * @param  string  $permission  a permission the registry may qualify per role
      */
     private function withinScope(User $user, string $permission, SettingGroup $group): bool
     {
-        $notes = Permissions::SCOPED[$permission] ?? [];
-        $grantedTo = Roles::rolesWith($permission);
-
-        foreach ($this->roleNames($user) as $role) {
-            if (! in_array($role, $grantedTo, true)) {
-                continue;
-            }
-
-            // No qualifier recorded for this role means the grant is not scoped.
-            if (! array_key_exists($role, $notes)) {
-                return true;
-            }
-
-            if ($notes[$role] === $group->value) {
-                return true;
-            }
+        // A role that holds the permission with no qualifier recorded holds it
+        // outright, so a scoped role the user also holds cannot narrow them.
+        if (ScopedGrants::holdsUnscoped($user, $permission)) {
+            return true;
         }
 
-        return false;
-    }
-
-    /**
-     * The names of the roles this user holds.
-     *
-     * `getRoleNames()` hands back a Collection whose values are not typed at this
-     * boundary, and role names are used as array keys against the registry below —
-     * so they are narrowed once, here, rather than at each lookup.
-     *
-     * @return list<string>
-     */
-    private function roleNames(User $user): array
-    {
-        $names = [];
-
-        foreach ($user->getRoleNames() as $name) {
-            if (is_string($name)) {
-                $names[] = $name;
-            }
-        }
-
-        return $names;
-    }
-
-    /**
-     * Whether every role through which the user holds a permission holds it with
-     * a qualifier — that is, whether the qualification applies to them at all.
-     *
-     * Returns false for somebody who also holds the permission unqualified
-     * (a Finance Officer who is later made an Administrator), because the broader
-     * grant is the one that describes what they may do.
-     */
-    private function holdsOnlyQualified(User $user, string $permission): bool
-    {
-        $notes = Permissions::SCOPED[$permission] ?? [];
-        $grantedTo = Roles::rolesWith($permission);
-        $holds = false;
-
-        foreach ($this->roleNames($user) as $role) {
-            if (! in_array($role, $grantedTo, true)) {
-                continue;
-            }
-
-            $holds = true;
-
-            if (! array_key_exists($role, $notes)) {
-                return false;
-            }
-        }
-
-        return $holds;
+        // Otherwise the qualifier recorded for each role they hold it through IS
+        // the group name that role may reach — the one entry in the registry whose
+        // prose happens to be machine-readable, and the reason SettingGroup has an
+        // `operations` case at all.
+        return in_array($group->value, ScopedGrants::qualifiersFor($user, $permission), true);
     }
 }

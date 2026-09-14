@@ -28,4 +28,23 @@ enum FileVisibility: string
             self::IsRestricted => 'Explicitly authorized',
         };
     }
+
+    /**
+     * How much protection this tier asserts, least to most.
+     *
+     * A ranking rather than a set of flags, because the rule FileService enforces
+     * is an ordering: FileCategory declares the LEAST protective tier its files may
+     * be stored under, and a row may always be more protective than that, never
+     * less. Comparing ranks is what makes "a student document may not be public"
+     * one line instead of a table of special cases.
+     */
+    public function rank(): int
+    {
+        return match ($this) {
+            self::IsPublic => 0,
+            self::IsAuthenticated => 1,
+            self::IsPrivate => 2,
+            self::IsRestricted => 3,
+        };
+    }
 }

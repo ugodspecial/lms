@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Exceptions;
 
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
 /**
@@ -18,6 +19,19 @@ use Throwable;
  * logged with a stack trace, and rendered as a generic message (§64). A student
  * must never see "SQLSTATE[23000]: Integrity constraint violation".
  *
+ * It implements HttpExceptionInterface, and that is not decorative. Laravel's
+ * handler renders an exception it does not recognise as a 500 whatever status the
+ * exception carries, so a refused download — a 403 that is the correct, expected,
+ * everyday answer — would arrive as an Internal Server Error, be reported to the
+ * error log as one, and show a person who simply lacked permission a page telling
+ * them the platform had broken. The interface is what makes `getStatusCode()` the
+ * status of the response, and `resources/views/errors/{status}.blade.php` the page
+ * that is rendered for it (§76).
+ *
+ * `getHeaders()` exists for the same reason: a 429 that does not say when to come
+ * back is a rate limit a client cannot respect, so DownloadAuthorizer sends
+ * Retry-After with it.
+ *
  * Usage:
  *   throw new PlatformException(
  *       message: 'A parent or guardian must complete this purchase.',
@@ -26,11 +40,12 @@ use Throwable;
  *       errors: ['student' => ['This student is under 18.']],
  *   );
  */
-class PlatformException extends RuntimeException
+class PlatformException extends RuntimeException implements HttpExceptionInterface
 {
     /**
      * @param  array<string, list<string>>  $errors  field => messages, for form repopulation
      * @param  array<string, mixed>  $context  logged server-side, never shown to the user
+     * @param  array<string, string>  $headers  sent with the response, e.g. Retry-After on a 429
      */
     public function __construct(
         string $message,
@@ -38,6 +53,7 @@ class PlatformException extends RuntimeException
         protected int $statusCode = 422,
         private readonly array $errors = [],
         private readonly array $context = [],
+        private readonly array $headers = [],
         ?Throwable $previous = null,
     ) {
         parent::__construct($message, 0, $previous);
@@ -75,6 +91,16 @@ class PlatformException extends RuntimeException
     public function getStatusCode(): int
     {
         return $this->statusCode;
+    }
+
+    /**
+     * Headers to send with the rendered response.
+     *
+     * @return array<string, string>
+     */
+    public function getHeaders(): array
+    {
+        return $this->headers;
     }
 
     /** Set a custom HTTP status and return $this, for fluent throwing. */

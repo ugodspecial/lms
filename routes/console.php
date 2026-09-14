@@ -47,6 +47,16 @@ Schedule::command('queue:prune-failed --hours=168')
     ->daily()
     ->withoutOverlapping();
 
+// Audit retention. The window is config rather than a number here, because how
+// long a platform keeps its compliance trail is a decision an operator makes about
+// their own jurisdiction. This is the only removal path AuditLog leaves open: it
+// deletes an old RANGE through the query builder, which never instantiates a
+// model, so the append-only guard on the model does not fire — and a single entry
+// still cannot be edited or deleted by anything.
+Schedule::command('audit:prune')
+    ->dailyAt('03:30')
+    ->withoutOverlapping();
+
 /*
 |--------------------------------------------------------------------------
 | Queue drain for hosts without a persistent worker

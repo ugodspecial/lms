@@ -34,10 +34,19 @@ use Illuminate\Support\Carbon;
  * served through the access path, and a row marked restricted is not made
  * readable by any property of this model — see the ADR-06 note in docs/11.
  *
- * @property Carbon|null $deleted_at
+ * @property string $uuid
  * @property FileCategory $category
  * @property FileVisibility $visibility
- * @property string $uuid
+ * @property string $disk
+ * @property string $path
+ * @property string $original_name
+ * @property string $mime_type
+ * @property int $size_bytes
+ * @property string $checksum_sha256
+ * @property string|null $fileable_type
+ * @property int|null $fileable_id
+ * @property int|null $uploaded_by
+ * @property Carbon|null $deleted_at
  */
 #[Guarded(['*'])]
 class File extends Model

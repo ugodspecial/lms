@@ -21,6 +21,7 @@ $web = __DIR__.'/web';
 
 foreach ([
     'public.php',      // marketing + anonymous pages
+    'files.php',       // /files/{uuid}/download — one authorized entry point
     'student.php',     // /student
     'parent.php',      // /parent
     'tutor.php',       // /tutor

@@ -86,6 +86,25 @@ final class Roles
      *
      * @var array<string, string>
      */
+    /**
+     * Roles that carry another role's grants, and therefore its qualifiers.
+     *
+     * `permissionsFor()` gives Instructor the Tutor permission shape, and
+     * `rolesWith()` adds Instructor wherever a TU grant appears, so the two hold
+     * the same permissions. `Permissions::SCOPED` is written against the primary
+     * name, because Instructor is deliberately not a column in the matrix.
+     *
+     * A qualifier lookup that missed this would find nothing recorded for
+     * Instructor, and "nothing recorded" is how a policy reads "no scope" — so
+     * 'own uploads' would silently become 'any file' for every Instructor on the
+     * platform, with no exception and nothing in the logs to say it happened.
+     *
+     * @var array<string, string> alias role => the role whose qualifiers it reads
+     */
+    public const QUALIFIER_ALIASES = [
+        self::INSTRUCTOR => self::TUTOR,
+    ];
+
     public const CODES = [
         'SA' => self::SUPER_ADMIN,
         'AD' => self::ADMINISTRATOR,

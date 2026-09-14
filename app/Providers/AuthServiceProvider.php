@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Domain\Administration\Models\AuditLog;
+use App\Domain\Administration\Models\File;
 use App\Domain\Administration\Models\Setting;
 use App\Domain\Administration\Permissions;
 use App\Domain\Administration\Policies\AuditLogPolicy;
+use App\Domain\Administration\Policies\FilePolicy;
 use App\Domain\Administration\Policies\SettingPolicy;
 use App\Domain\Administration\Roles;
 use App\Domain\Identity\Models\User;
@@ -101,5 +103,10 @@ final class AuthServiceProvider extends ServiceProvider
     {
         Gate::policy(Setting::class, SettingPolicy::class);
         Gate::policy(AuditLog::class, AuditLogPolicy::class);
+
+        // File's read abilities take a nullable user, because the public tier has
+        // to be reachable by a guest — Laravel calls a policy for a guest only when
+        // the method accepts one, and that only happens if the policy is registered.
+        Gate::policy(File::class, FilePolicy::class);
     }
 }
