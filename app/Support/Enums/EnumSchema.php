@@ -60,10 +60,21 @@ final class EnumSchema
      * A full CHECK clause, with a stable constraint name so `down()` and any
      * later ALTER can reference it deterministically.
      *
+     * The column is quoted because this clause is raw SQL appended with
+     * `DB::statement()`, and the schema builder only quotes the identifiers it
+     * generates itself. `settings.group` is the case that found this: GROUP is
+     * reserved in MySQL, so an unquoted `CHECK (group IN (…))` is a 1064 syntax
+     * error at migrate time — and the columns this ends up used on are exactly the
+     * short, ordinary words a schema reaches for (`group`, `key`, `order`,
+     * `condition`, `range`, `read`), several of which are reserved.
+     *
+     * Backticks are MySQL/MariaDB quoting, which is what this platform targets
+     * (docs/00: MySQL 8.x or MariaDB, no other engine).
+     *
      * @param  class-string<BackedEnum>  $enum
      */
     public static function check(string $table, string $column, string $enum): string
     {
-        return "CONSTRAINT {$table}_{$column}_check CHECK ({$column} IN (".self::sqlList($enum).'))';
+        return "CONSTRAINT {$table}_{$column}_check CHECK (`{$column}` IN (".self::sqlList($enum).'))';
     }
 }

@@ -56,11 +56,23 @@ final class SettingPolicy
 
     public function view(User $user, Setting $setting): bool
     {
+        $group = $setting->group;
+
+        // An elevated grant carries its own read. docs/05 §3.9 gives the Finance
+        // Officer `settings.manage.payments` as "read + test-mode only", and the
+        // read half cannot depend on their `settings.view` grant, which is scoped
+        // to `commerce` — otherwise the qualification would forbid the very thing
+        // it promises. Only the elevated groups get this: for a role-scoped group
+        // the general permission is what they hold, so it says nothing about reach.
+        if (! $group->isRoleScoped() && $user->can($group->requiredPermission())) {
+            return true;
+        }
+
         if (! $user->can(SettingGroup::VIEW_PERMISSION)) {
             return false;
         }
 
-        return $this->withinScope($user, SettingGroup::VIEW_PERMISSION, $setting->group);
+        return $this->withinScope($user, SettingGroup::VIEW_PERMISSION, $group);
     }
 
     public function update(User $user, Setting $setting): bool

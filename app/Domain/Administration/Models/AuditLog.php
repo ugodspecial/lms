@@ -38,6 +38,8 @@ use LogicException;
  * hash or 2FA secret would make the audit log the most valuable table in the
  * database, and hiding it in the UI would not change that (§77).
  *
+ * @property array<array-key, mixed>|null $old_values
+ * @property array<array-key, mixed>|null $new_values
  * @property Carbon|null $created_at
  */
 #[Guarded(['*'])]

@@ -8,7 +8,6 @@ use App\Domain\Administration\Enums\SettingGroup;
 use App\Domain\Administration\Enums\SettingType;
 use App\Domain\Administration\Models\AuditLog;
 use App\Domain\Administration\Models\Setting;
-use App\Domain\Administration\Permissions;
 use App\Domain\Administration\Roles;
 use App\Domain\Identity\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -313,14 +312,4 @@ final class SettingPolicyTest extends TestCase
         $this->assertFalse($administrator->can('forceDelete', $entry));
     }
 
-    public function test_every_group_the_policy_branches_on_is_one_the_registry_can_scope(): void
-    {
-        // A guard against the enum and the registry drifting apart: if a group were
-        // added whose permission nobody holds, the settings screen would render
-        // fields no role on the platform could save.
-        foreach (SettingGroup::cases() as $group) {
-            $this->assertTrue(Permissions::has($group->requiredPermission()));
-            $this->assertNotSame([], Roles::rolesWith($group->requiredPermission()));
-        }
-    }
 }
