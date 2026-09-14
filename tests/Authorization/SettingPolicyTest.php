@@ -311,5 +311,4 @@ final class SettingPolicyTest extends TestCase
         $this->assertFalse($administrator->can('restore', $entry));
         $this->assertFalse($administrator->can('forceDelete', $entry));
     }
-
 }
