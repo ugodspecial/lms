@@ -9,7 +9,6 @@ use App\Domain\Administration\Roles;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\TwoFactorPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Carbon;
 use Tests\Support\BuildsPhaseOneRecords;
 use Tests\TestCase;
 
@@ -218,18 +217,5 @@ final class Privileged2faEnforcedTest extends TestCase
         }
 
         return $user;
-    }
-
-    /**
-     * What confirming a second factor does to the row, without Fortify: the flag and
-     * the timestamp are the two facts the rule reads, and setting them is what the
-     * enrolment screen (docs/10 Phase 1, UI row) will do through Fortify.
-     */
-    private function confirmTwoFactor(User $user): void
-    {
-        $user->two_factor_enabled = true;
-        $user->two_factor_secret = 'a-secret-that-has-been-proved-readable';
-        $user->two_factor_confirmed_at = Carbon::now();
-        $user->save();
     }
 }

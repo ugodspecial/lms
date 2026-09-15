@@ -67,7 +67,7 @@ final class OAuthLinkingTest extends TestCase
         $this->assertSame('access-token', $account->access_token);
         $this->assertSame('refresh-token', $account->refresh_token);
 
-        $stored = DB::table('connected_accounts')->whereKey($account->getKey())->first();
+        $stored = self::rawRow($account);
 
         $this->assertNotNull($stored);
         $this->assertStringNotContainsString('access-token', (string) $stored->access_token);
@@ -496,7 +496,7 @@ final class OAuthLinkingTest extends TestCase
         // The status is what the platform consults; the tokens are what an attacker
         // with a dump consults. A revoked row that still held a working refresh token
         // would be a revocation in name only.
-        $stored = DB::table('connected_accounts')->whereKey($account->getKey())->first();
+        $stored = self::rawRow($account);
 
         $this->assertNotNull($stored);
         $this->assertNull($stored->access_token);
@@ -594,6 +594,20 @@ final class OAuthLinkingTest extends TestCase
         $this->service()->disconnect($account, $administrator);
 
         $this->assertSame(ConnectedAccountStatus::Revoked, $account->refresh()->status);
+    }
+
+    /**
+     * The row as the database holds it, bypassing the model's casts.
+     *
+     * `where('id', ...)` and not `whereKey(...)`: on a query builder there is no
+     * such method, and `Query\Builder::__call` reads `whereKey` as a dynamic where
+     * and asks MySQL for a column called `key`. It failed loudly here, but the same
+     * mistake against a table that happens to have a `key` column would have
+     * compared the wrong rows and passed.
+     */
+    private static function rawRow(ConnectedAccount $account): ?object
+    {
+        return DB::table('connected_accounts')->where('id', $account->getKey())->first();
     }
 
     private function service(): OAuthLinkingService

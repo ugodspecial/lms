@@ -205,6 +205,25 @@ trait BuildsPhaseOneRecords
     }
 
     /**
+     * What confirming a second factor does to the row, without Fortify.
+     *
+     * The flag and the timestamp are the two facts App\Domain\Identity\TwoFactorPolicy
+     * reads, and setting them is what the enrolment screen will do through Fortify
+     * once the auth UI exists. Shared rather than written per test because a test
+     * that sets only the flag builds an account the platform considers secured but
+     * has never challenged — and that is a different state with a different answer.
+     */
+    protected function confirmTwoFactor(User $user): User
+    {
+        $user->two_factor_enabled = true;
+        $user->two_factor_secret = 'a-secret-that-has-been-proved-readable';
+        $user->two_factor_confirmed_at = now();
+        $user->save();
+
+        return $user;
+    }
+
+    /**
      * Sets the columns a test needs that the model will not accept from an array.
      *
      * Deliberately does not save: the caller saves once, so that append-only models

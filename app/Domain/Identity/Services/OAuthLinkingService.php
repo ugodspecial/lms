@@ -81,6 +81,42 @@ final class OAuthLinkingService
         ?DateTimeInterface $expiresAt = null,
         ?User $actor = null,
     ): ConnectedAccount {
+        // Attaching a provider identity to an account that ALREADY exists is the
+        // case where an explicitly unverified address is refused: this platform
+        // verified that address when the account was created, and a provider saying
+        // "we have not checked it" is a downgrade of a fact we already hold.
+        // register() is the opposite case and does not come through here.
+        self::assertEmailIsNotReportedUnverified($providerUser, $provider);
+
+        return $this->persistLink($user, $providerUser, $provider, $purpose, $scopes, $expiresAt, $actor);
+    }
+
+    /**
+     * The write itself: find the row for (user, provider, purpose) and store what
+     * the provider has just told us.
+     *
+     * Private, and deliberately without the verified-email assertion link() makes.
+     * Two callers need different answers to the same question. Linking an identity
+     * to an account that already exists means this platform verified that address
+     * once, so an unverified claim now arriving for it is a downgrade and is
+     * refused. Creating an account from that same claim is not a downgrade:
+     * register() makes the account `pending`, leaves `email_verified_at` null and
+     * sends this platform's own verification email, so the claim buys a row and
+     * nothing else. One code path with a flag to skip the check would put that
+     * distinction in a boolean instead of in the two methods that actually differ.
+     *
+     * @throws PlatformException 422 `identity.provider_identity_missing`, no subject id
+     * @throws PlatformException 409 `identity.provider_already_linked`, another user holds it
+     */
+    private function persistLink(
+        User $user,
+        ProviderUser $providerUser,
+        ConnectedProvider $provider,
+        ConnectedPurpose $purpose = ConnectedPurpose::Login,
+        ?string $scopes = null,
+        ?DateTimeInterface $expiresAt = null,
+        ?User $actor = null,
+    ): ConnectedAccount {
         $providerUserId = trim((string) $providerUser->getId());
 
         if ($providerUserId === '') {
@@ -95,7 +131,6 @@ final class OAuthLinkingService
 
         $email = self::normaliseEmail($providerUser->getEmail());
 
-        self::assertEmailIsNotReportedUnverified($providerUser, $provider);
         self::assertIdentityIsNotClaimed($user, $provider, $providerUserId);
 
         return DB::transaction(function () use (
@@ -291,7 +326,7 @@ final class OAuthLinkingService
                 actor: $user,
             );
 
-            $this->link($user, $providerUser, $provider, ConnectedPurpose::Login, actor: $user);
+            $this->persistLink($user, $providerUser, $provider, ConnectedPurpose::Login, actor: $user);
 
             return $user;
         });

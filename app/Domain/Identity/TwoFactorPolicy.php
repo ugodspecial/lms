@@ -21,6 +21,21 @@ use Spatie\Permission\Exceptions\PermissionDoesNotExist;
  * permission Super Admin holds and a bypass that ran first would wave through
  * exactly the account this rule exists to protect.
  *
+ * Being first in OUR callback is not the same as being first in the Gate, which is
+ * why `config/permission.php` sets `register_permission_check_method` to false.
+ * Spatie appends its own `Gate::before` — one that answers true for any permission
+ * the user holds — when the Gate is first resolved, and package providers boot
+ * before the ones in bootstrap/providers.php. With it registered, every check this
+ * rule exists to refuse was already answered before the rule was asked, and nothing
+ * about the failure looked like an ordering problem: `blocks()` returned true in a
+ * test, `can()` returned true a line later, and both were correct.
+ *
+ * What the rule covers is the PERMISSION, so `can('settings.manage.security')` is
+ * refused. A Super Admin asking a model question — `can('update', $setting)` — is
+ * answered by the bypass before any policy runs, which is ADR-09's behaviour and
+ * not this rule's to change; screens that write privileged settings are gated on
+ * the permission, which is the check that is enforced.
+ *
  * Enforcement is a refusal, not a data change. W7 says the person who will not
  * enable TOTP keeps everything else: the account stays active, the grant stays on
  * the role, the permission simply stops answering yes. Doing it as a rule rather

@@ -116,9 +116,35 @@ return [
     /*
      * When set to true, the method for checking permissions will be registered on the gate.
      * Set this to false if you want to implement custom logic for checking permissions.
+     *
+     * FALSE here, and the reason is ORDER, not preference.
+     *
+     * Spatie implements this flag by appending a `Gate::before` callback the first
+     * time the Gate is resolved (PermissionServiceProvider::packageBooted ->
+     * PermissionRegistrar::registerPermissions). That callback returns true for any
+     * permission the user holds. Package providers are registered and booted ahead
+     * of the ones in bootstrap/providers.php, so it is always FIRST in the queue,
+     * and `Gate::before` stops at the first non-null answer.
+     *
+     * App\Providers\AuthServiceProvider has to answer first, because two of the
+     * things it does are refusals that must outrank a grant: the two-factor rule
+     * for privileged permissions (docs/07 W7) and the participant-only carve-out
+     * that keeps a Super Admin bypass away from reviews.create. With spatie's
+     * callback registered, a Super Admin who had never confirmed a second factor
+     * was answered `true` for `settings.manage.security` before the rule was asked
+     * at all — silently, and with every other check on the platform still returning
+     * plausible answers, which is what made it look like the rule was broken rather
+     * than never consulted.
+     *
+     * Nothing is lost by switching it off. AuthServiceProvider maps every
+     * permission in App\Domain\Administration\Permissions onto the Gate itself,
+     * which is what tests/Authorization/PermissionGateTest exists to prove, and
+     * that mapping is the custom logic this flag's own comment refers to. If it is
+     * ever turned back on, the 2FA rule stops being enforced and no test that only
+     * checks a GRANT will notice — Privileged2faEnforcedTest is the one that does.
      */
 
-    'register_permission_check_method' => true,
+    'register_permission_check_method' => false,
 
     /*
      * When set to true, Laravel\Octane\Events\OperationTerminated event listener will be registered

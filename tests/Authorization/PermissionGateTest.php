@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Tests\Support\BuildsPhaseOneRecords;
 use Tests\TestCase;
 
 /**
@@ -31,7 +32,7 @@ use Tests\TestCase;
  */
 final class PermissionGateTest extends TestCase
 {
-    use RefreshDatabase;
+    use BuildsPhaseOneRecords, RefreshDatabase;
 
     // Seeding is owned by Tests\TestCase, which explains why it cannot live here:
     // `migrate:fresh --seed` runs once per process and takes the flag from
@@ -65,6 +66,14 @@ final class PermissionGateTest extends TestCase
     public function test_a_super_admin_passes_every_registered_check_except_participation(): void
     {
         $superAdmin = $this->user(Roles::SUPER_ADMIN);
+
+        // The two-factor rule sits AHEAD of the bypass (docs/07 W7), so a test
+        // about the bypass removes that variable first. Without this, the two
+        // privileged permissions would be refused here for a reason that has
+        // nothing to do with the bypass, and the assertion below would have to
+        // list them as expected refusals — which is how a rule that stopped being
+        // enforced would keep this test green.
+        $this->confirmTwoFactor($superAdmin);
 
         $refused = [];
 
