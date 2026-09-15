@@ -81,8 +81,9 @@ final class AuditPrune extends Command
         }
 
         // Bulk, on purpose: see the class docblock. This line is the reason
-        // AuditLog::delete() is allowed to throw.
-        $deleted = $candidates->delete();
+        // AuditLog::delete() is allowed to throw. The builder's own delete()
+        // returns mixed, and the count is reported and audited as a number.
+        $deleted = (int) $candidates->delete();
 
         $audit->record(
             event: 'audit.retention_pruned',

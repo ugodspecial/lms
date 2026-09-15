@@ -113,6 +113,42 @@ final class GuessableUrlTest extends TestCase
         $this->assertSame([], array_values(array_intersect($writeVerbs, ['POST', 'PUT', 'PATCH', 'DELETE'])));
     }
 
+    public function test_no_disk_is_served_by_the_frameworks_own_storage_route(): void
+    {
+        // A local disk with `serve => true` makes Laravel register two routes of
+        // its own for it — GET /storage/{path} AND PUT /storage/{path}
+        // (Illuminate\Filesystem\FilesystemServiceProvider::serveFiles). Both go
+        // straight to the disk: past FileService's MIME and extension checks, past
+        // the category's visibility floor, past the registry row, past the audit
+        // entry. The second one is a WRITE, so it would also be a second source of
+        // truth about what the platform holds.
+        //
+        // They are signature-gated rather than open — ServeFile refuses an unsigned
+        // request with 403 outside production and 404 inside it — which is why this
+        // is a decision and not an incident. But the platform has one door on
+        // purpose, and config/filesystems.php keeps it that way.
+        $disks = config('filesystems.disks');
+
+        $this->assertIsArray($disks);
+
+        foreach ($disks as $disk => $config) {
+            $served = is_array($config) ? (bool) ($config['serve'] ?? false) : false;
+
+            $this->assertFalse(
+                $served,
+                'the ['.$disk.'] disk is served by the framework, which registers routes past FilePolicy',
+            );
+        }
+
+        $storageRoutes = collect(Route::getRoutes()->getRoutes())
+            ->filter(static fn ($route): bool => str_starts_with($route->uri(), 'storage'))
+            ->map(static fn ($route): string => implode('|', $route->methods()).' '.$route->uri())
+            ->values()
+            ->all();
+
+        $this->assertSame([], $storageRoutes);
+    }
+
     public function test_a_known_storage_path_is_not_fetchable_over_http(): void
     {
         Storage::fake('restricted');
@@ -126,6 +162,12 @@ final class GuessableUrlTest extends TestCase
 
         // Even holding the exact path — an administrator, a leaked log line, a
         // backup listing — there is no URL that returns it. The only door asks first.
+        //
+        // `/storage/...` is in the list because it is the URI Laravel would have
+        // used had any disk been served; with `serve => false` on every disk there
+        // is no such route, so the answer is 404 rather than the 403 ServeFile
+        // gives an unsigned request. Both are refusals, and the one that is not a
+        // door at all is the one being asserted here.
         foreach ([
             '/storage/'.$file->path,
             '/'.$file->path,

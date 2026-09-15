@@ -148,7 +148,7 @@ final class AuditPruneTest extends TestCase
             'deleted' => 2,
             'retention_days' => 30,
         ], array_intersect_key((array) $entry->new_values, ['deleted' => true, 'retention_days' => true]));
-        $this->assertContains('retention', $entry->tags);
+        $this->assertContains('retention', $entry->tagList());
 
         // The entry that records the prune is itself new, so a later run keeps it.
         $this->assertTrue(Carbon::parse($entry->created_at)->greaterThan(Carbon::now()->subDays(30)));

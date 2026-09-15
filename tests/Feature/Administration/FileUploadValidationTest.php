@@ -187,7 +187,7 @@ final class FileUploadValidationTest extends TestCase
 
     public function test_a_mime_type_outside_the_allowlist_is_refused(): void
     {
-        Storage::fake('private');
+        Storage::fake('restricted');
 
         foreach ([
             ['malware.bin', 'application/x-msdownload'],
@@ -198,7 +198,7 @@ final class FileUploadValidationTest extends TestCase
                 $this->service()->store(
                     upload: UploadedFile::fake()->create($name, 10, $mime),
                     category: FileCategory::StudentDocument,
-                    visibility: FileVisibility::IsPrivate,
+                    visibility: FileVisibility::IsRestricted,
                 );
 
                 $this->fail("{$name} ({$mime}) was stored.");
@@ -212,7 +212,7 @@ final class FileUploadValidationTest extends TestCase
             }
         }
 
-        self::assertNothingWasStored('private');
+        self::assertNothingWasStored('restricted');
     }
 
     public function test_an_empty_upload_is_refused(): void
@@ -308,7 +308,7 @@ final class FileUploadValidationTest extends TestCase
 
         $this->assertSame($before, File::query()->count());
         self::assertNothingWasStored('public');
-        Storage::disk('authenticated')->assertNothingStored();
+        self::assertNothingWasStored('authenticated');
     }
 
     public function test_a_category_may_always_be_stored_more_protectively_than_it_must(): void
@@ -331,12 +331,12 @@ final class FileUploadValidationTest extends TestCase
 
     public function test_the_stored_path_contains_neither_the_original_name_nor_the_uuid(): void
     {
-        Storage::fake('private');
+        Storage::fake('restricted');
 
         $file = $this->service()->store(
             upload: UploadedFile::fake()->create('passport-scan-of-jane.pdf', 10, 'application/pdf'),
             category: FileCategory::StudentDocument,
-            visibility: FileVisibility::IsPrivate,
+            visibility: FileVisibility::IsRestricted,
         );
 
         // The uuid is public: it is the download route's key. A path built from it
@@ -353,17 +353,17 @@ final class FileUploadValidationTest extends TestCase
 
     public function test_two_uploads_of_the_same_file_get_different_paths(): void
     {
-        Storage::fake('private');
+        Storage::fake('restricted');
 
         $first = $this->service()->store(
             upload: UploadedFile::fake()->createWithContent('same.txt', 'identical content'),
             category: FileCategory::StudentDocument,
-            visibility: FileVisibility::IsPrivate,
+            visibility: FileVisibility::IsRestricted,
         );
         $second = $this->service()->store(
             upload: UploadedFile::fake()->createWithContent('same.txt', 'identical content'),
             category: FileCategory::StudentDocument,
-            visibility: FileVisibility::IsPrivate,
+            visibility: FileVisibility::IsRestricted,
         );
 
         // Deduplication by checksum would make one person's delete remove another
@@ -375,12 +375,12 @@ final class FileUploadValidationTest extends TestCase
 
     public function test_the_original_name_is_sanitised_before_it_is_stored(): void
     {
-        Storage::fake('private');
+        Storage::fake('restricted');
 
         $file = $this->service()->store(
             upload: UploadedFile::fake()->createWithContent("../../etc/passwd\x00.pdf", 'content'),
             category: FileCategory::StudentDocument,
-            visibility: FileVisibility::IsPrivate,
+            visibility: FileVisibility::IsRestricted,
         );
 
         $stored = File::query()->whereKey($file->getKey())->value('original_name');
@@ -445,8 +445,8 @@ final class FileUploadValidationTest extends TestCase
             'checksum_sha256' => $file->checksum_sha256,
         ], $entry->new_values);
 
-        $this->assertContains('restricted', $entry->tags);
-        $this->assertContains('files', $entry->tags);
+        $this->assertContains('restricted', $entry->tagList());
+        $this->assertContains('files', $entry->tagList());
     }
 
     public function test_deleting_is_soft_leaves_the_bytes_and_is_recorded(): void

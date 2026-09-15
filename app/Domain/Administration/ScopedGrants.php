@@ -125,8 +125,8 @@ final class ScopedGrants
     }
 
     /**
-     * The roles this user holds that the registry grants the permission to, plus
-     * any role whose qualifiers an alias they hold should be read against.
+     * The roles this user holds that the registry grants the permission to, with
+     * every alias replaced by the role whose qualifiers it reads against.
      *
      * @return list<string>
      */
@@ -143,19 +143,20 @@ final class ScopedGrants
                 continue;
             }
 
-            $held[] = $role;
+            // REPLACED, not added alongside. An Instructor carries the Tutor
+            // permission shape (Roles::QUALIFIER_ALIASES) and Permissions::SCOPED
+            // writes the qualifier against 'Tutor'. Counting both names would leave
+            // the alias in the list, and an alias has no qualifier of its own — so
+            // it reads as "this role holds the permission with no scope at all",
+            // which is exactly the wrong answer: 'own uploads' becomes 'any file',
+            // with no exception and nothing in the log to say it happened.
+            $primary = Roles::QUALIFIER_ALIASES[$role] ?? null;
 
-            // An Instructor carries the Tutor permission shape (see
-            // Roles::QUALIFIER_ALIASES), and the qualifier is written against
-            // 'Tutor'. Counting the alias as held is what makes 'own uploads' mean
-            // 'own uploads' for both, rather than reading as unscoped for one.
-            $alias = Roles::QUALIFIER_ALIASES[$role] ?? null;
-
-            if (is_string($alias) && in_array($alias, $grantedTo, true)) {
-                $held[] = $alias;
-            }
+            $held[] = is_string($primary) && in_array($primary, $grantedTo, true)
+                ? $primary
+                : $role;
         }
 
-        return $held;
+        return array_values(array_unique($held));
     }
 }

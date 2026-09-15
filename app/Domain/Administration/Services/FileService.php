@@ -96,7 +96,20 @@ final class FileService
 
         $path = $this->pathFor($category, $extension);
 
-        Storage::disk($disk)->putFileAs(dirname($path), $upload, basename($path));
+        // Resolved before anything is written: a file whose owner cannot be
+        // recorded would be bytes with no subject, which is worse than no file.
+        $ownerKey = $owner === null ? null : $this->ownerKey($owner);
+
+        // The three protected tiers are configured with `throw => true`, so a
+        // failed write arrives as an exception. The public tier is not, and there
+        // `putFileAs` answers `false` — registering a row whose bytes are missing
+        // would be data loss that stays invisible until somebody needs the file.
+        if (Storage::disk($disk)->putFileAs(dirname($path), $upload, basename($path)) === false) {
+            throw new RuntimeException(sprintf(
+                'The file could not be written to the "%s" disk.',
+                $disk,
+            ));
+        }
 
         // File is wholly non-mass-assignable, so each assertion is written out and
         // saved once — an INSERT, never an UPDATE of a row that was already
@@ -111,11 +124,11 @@ final class FileService
         $file->mime_type = $detectedMime;
         $file->size_bytes = (int) $upload->getSize();
         $file->checksum_sha256 = $checksum;
-        $file->uploaded_by = $uploader?->id;
+        $file->uploaded_by = $uploader === null ? null : (int) $uploader->getKey();
 
         if ($owner !== null) {
             $file->fileable_type = $owner::class;
-            $file->fileable_id = $owner->getKey();
+            $file->fileable_id = $ownerKey;
         }
 
         $file->save();
@@ -190,6 +203,31 @@ final class FileService
             tags: ['files', $file->category->value],
             actor: $actor,
         );
+    }
+
+    /**
+     * The owner's key, as the registry column can hold it.
+     *
+     * `fileable_id` is a big integer. A key read back from MySQL arrives as a
+     * numeric string unless the driver returns native types, so both shapes are
+     * the same key; a key that is not a number at all is not, and coercing it
+     * would point the registry at somebody else's record — the one mistake a file
+     * registry cannot be allowed to make quietly.
+     *
+     * @throws RuntimeException if the owner's key is not an integer
+     */
+    private function ownerKey(Model $owner): int
+    {
+        $key = $owner->getKey();
+
+        if (is_int($key) || (is_string($key) && ctype_digit($key))) {
+            return (int) $key;
+        }
+
+        throw new RuntimeException(sprintf(
+            '%s cannot own a file: fileable_id is a big integer and its key is not one.',
+            $owner::class,
+        ));
     }
 
     /**

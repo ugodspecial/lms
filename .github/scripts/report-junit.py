@@ -11,6 +11,14 @@ The JUnit log has one structured record per test, so all of them can be reported
 needle it could not find at the very end ("... does not contain "Identity &
 Access".").
 
+There is a second, quieter way to lose a failure: GitHub keeps at most ten error
+annotations per check run and keeps the first ten. With eleven failures the last
+one simply did not exist for anyone reading the API, and the build reported ten
+of eleven. So the names of every failing test go out first, in one compact
+annotation, and the per-test details follow until the budget runs out. What
+failed is never the thing that goes missing; only the detail can be, and this
+says so out loud when it is.
+
 Usage: python3 .github/scripts/report-junit.py junit.xml
 
 Always exits 0. This is a reporting step, not a gate: the PHPUnit step already
@@ -24,6 +32,12 @@ import xml.etree.ElementTree as ET
 HEAD = 200
 TAIL = 500
 CAP = 900
+
+# One annotation carries every failing test name, the rest carry detail. Ten is
+# GitHub's per-check-run cap, so nine details plus the summary is the most that
+# can be published without the summary being the thing that gets dropped.
+SUMMARY_CAP = 1700
+DETAILS_SHOWN = 9
 
 
 def clip(text: str) -> str:
@@ -39,6 +53,18 @@ def clip(text: str) -> str:
 def annotate(text: str) -> str:
     """GitHub truncates an annotation at the first raw newline and reads % literally."""
     return text.replace("%", "%25").replace("\n", " ").replace("\r", " ")
+
+
+def short_name(name: str) -> str:
+    """`Tests\\Feature\\Administration\\FilePolicyTest::test_x` -> `FilePolicyTest::test_x`.
+
+    The namespace is the same for every test in a suite, so it costs budget and
+    says nothing. The class and method are what someone needs to find the file.
+    """
+    left, sep, right = name.partition("::")
+    if not sep:
+        return name
+    return f"{left.rsplit(chr(92), 1)[-1]}{sep}{right}"
 
 
 def main() -> int:
@@ -74,9 +100,24 @@ def main() -> int:
 
     print(f"JUnit log: {total} tests, {len(failing)} failing.")
 
-    for name, kind, detail in failing:
+    if failing:
+        names = ", ".join(short_name(name) for name, _, _ in failing)
+        if len(names) > SUMMARY_CAP:
+            names = f"{names[: SUMMARY_CAP - 30]} ...[{len(names)} chars]"
+        print(f"::error title={annotate(f'Failing tests ({len(failing)})')}::{annotate(names)}")
+
+    for name, kind, detail in failing[:DETAILS_SHOWN]:
         label = "Test failed" if kind == "failure" else "Test errored"
         print(f"::error title={annotate(label + ' — ' + name)}::{annotate(detail)}")
+
+    hidden = len(failing) - DETAILS_SHOWN
+    if hidden > 0:
+        reason = (
+            f"{hidden} further failing tests have no detail annotation: GitHub "
+            f"keeps ten per check run. Every name is in the first annotation, and "
+            f"the full messages are in the job log."
+        )
+        print(f"::error title={annotate(f'{hidden} failures without detail here')}::{annotate(reason)}")
 
     return 0
 

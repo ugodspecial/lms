@@ -90,7 +90,11 @@ final class SafeFilenameTest extends TestCase
     public function test_quotes_are_removed_because_they_end_a_header_parameter(): void
     {
         $this->assertSame('say hello.pdf', SafeFilename::forStorage('say "hello".pdf'));
-        $this->assertSame('it is.pdf', SafeFilename::forStorage("it's.pdf"));
+
+        // Removed, not replaced with a space: the quote is meaningless in a
+        // filename, and turning `it's.pdf` into `it is.pdf` would invent a word
+        // break the person who typed the name did not put there.
+        $this->assertSame('its.pdf', SafeFilename::forStorage("it's.pdf"));
     }
 
     public function test_a_semicolon_cannot_add_a_header_parameter_of_its_own(): void

@@ -17,7 +17,15 @@
 #
 #  For long output the HEAD is more useful than the tail — tools like Pint and
 #  PHPStan report per file in order, and the first entries are the ones to act on.
-#  Both ends are kept, with an explicit marker for what was dropped.
+#
+#  One annotation is not enough for long output. A 20 000-character `::error::`
+#  line was published and then arrived through the API with an empty message,
+#  while a 900-character one arrived intact: a failing step reported nothing at
+#  all about why. So the flattened output is cut into chunks small enough to
+#  survive, published head-first, each labelled with its position, and the total
+#  size is stated when the set is truncated. Ten chunks is the budget GitHub
+#  allows per check run; using more than that would cost the annotations other
+#  steps need.
 #
 #  Annotation text must escape `%` as `%25` and must not contain raw newlines, or
 #  GitHub truncates the message at the first one.
@@ -38,27 +46,35 @@ echo "$output"
 echo "────────────────────────────────────────────────────────────"
 
 if [ "$code" -ne 0 ]; then
-    lines="$(printf '%s' "$output" | wc -l | tr -d ' ')"
+    chunk_size=1700
+    max_chunks=9
 
-    if [ "$lines" -le 280 ]; then
-        excerpt="$output"
-    else
-        head_part="$(printf '%s' "$output" | head -200)"
-        tail_part="$(printf '%s' "$output" | tail -80)"
-        dropped=$((lines - 280))
-        excerpt="${head_part}
-...[${dropped} lines omitted]...
-${tail_part}"
-    fi
-
-    # ANSI escapes make an annotation unreadable; strip them before escaping.
-    detail="$(printf '%s' "$excerpt" \
+    # Flatten first, then cut: `cut -c` works per line, which would slice every
+    # line of the output instead of walking through it.
+    flat="$(printf '%s' "$output" \
         | sed -e 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
         | tr '\n\r' '||' \
-        | sed -e 's/%/%25/g' \
-        | cut -c1-20000)"
+        | sed -e 's/%/%25/g')"
 
-    echo "::error title=${title} (exit ${code})::${detail}"
+    total="${#flat}"
+    shown=$(( max_chunks * chunk_size ))
+    [ "$total" -lt "$shown" ] && shown="$total"
+
+    part=1
+    while [ "$part" -le "$max_chunks" ]; do
+        offset=$(( (part - 1) * chunk_size ))
+        [ "$offset" -ge "$total" ] && break
+
+        detail="${flat:$offset:$chunk_size}"
+        echo "::error title=${title} (exit ${code}, part ${part} of ${max_chunks}, ${total} chars total)::${detail}"
+
+        part=$(( part + 1 ))
+    done
+
+    if [ "$total" -gt "$shown" ]; then
+        dropped=$(( total - shown ))
+        echo "::error title=${title} (output truncated)::${dropped} more characters are in the job log; the first ${shown} are in the annotations above."
+    fi
 fi
 
 exit "$code"

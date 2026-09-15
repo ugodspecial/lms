@@ -326,8 +326,8 @@ final class SecureDownloadTest extends TestCase
         $this->assertSame($administrator->id, $entry->user_id);
         $this->assertSame(File::class, $entry->auditable_type);
         $this->assertSame($file->getKey(), $entry->auditable_id);
-        $this->assertContains('restricted', $entry->tags);
-        $this->assertContains('student_document', $entry->tags);
+        $this->assertContains('restricted', $entry->tagList());
+        $this->assertContains('student_document', $entry->tagList());
     }
 
     public function test_a_public_or_authenticated_download_is_not_recorded(): void

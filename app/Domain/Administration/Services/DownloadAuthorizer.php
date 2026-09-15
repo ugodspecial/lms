@@ -104,7 +104,7 @@ final class DownloadAuthorizer
         // A guest is limited per address. A signed-in user is limited per account,
         // so rotating IPs does not reset the counter for somebody who is
         // identifiable anyway.
-        $subject = $user !== null ? 'user.'.$user->getKey() : 'ip.'.$this->clientIp();
+        $subject = $user !== null ? 'user:'.(string) $user->getKey() : 'ip:'.$this->clientIp();
         $key = 'files.download.'.$subject;
 
         if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {

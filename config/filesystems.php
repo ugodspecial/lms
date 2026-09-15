@@ -33,7 +33,23 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+
+            // FALSE, and deliberately so. A local disk with `serve => true` makes
+            // the framework register `GET /storage/{path}` AND `PUT /storage/{path}`
+            // (Illuminate\Filesystem\FilesystemServiceProvider::serveFiles). Those
+            // are two more doors to stored bytes — one of them a WRITE — that go
+            // straight to the disk and past FileService, so past the MIME and
+            // extension checks, the category's visibility floor, the registry row
+            // and the audit entry (§59: one authorized download mechanism).
+            //
+            // They are signature-gated rather than wide open, which is why this is
+            // a decision and not an incident. But the platform has one door on
+            // purpose: /files/{uuid}/download, which asks FilePolicy first. Nothing
+            // here needs `serve` — previews and downloads both stream through that
+            // route, so a preview is subject to the same policy as the file it
+            // previews. Setting this back to true would reopen both routes, and
+            // GuessableUrlTest fails if it does.
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],
