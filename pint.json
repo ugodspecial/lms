@@ -1,0 +1,20 @@
+{
+    "preset": "laravel",
+    "notName": [
+        "*.blade.php",
+        "manifest.json",
+        "*.min.js",
+        "*.min.css"
+    ],
+    "exclude": [
+        "storage",
+        "public/build",
+        "bootstrap/cache",
+        "vendor",
+        "docs",
+        "node_modules"
+    ],
+    "rules": {
+        "no_unused_imports": true
+    }
+}
