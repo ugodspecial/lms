@@ -268,6 +268,42 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Security enforcement (§6, docs/06 §2, docs/07 W7)
+    |--------------------------------------------------------------------------
+    |
+    | Two-factor authentication is optional for everybody and MANDATORY for the
+    | holders of the permissions listed below. The list is configuration rather
+    | than code because docs/06 calls the requirement configurable, and because
+    | which accounts an operator counts as privileged is a fact about their
+    | organization, not about this platform (§95).
+    |
+    | Enforcement here means the permission stops answering yes. It is not the
+    | account that is suspended and not the grant that is removed — W7 is explicit
+    | that the person "can still do everything else". A rule rather than a data
+    | change is also what makes it reversible without anybody remembering to undo
+    | it: the moment 2FA is confirmed the permission works again, and there is no
+    | half-restored role left behind to find.
+    |
+    | `enforce => false` switches the rule off. It exists so an operator can bring
+    | a team on board before requiring TOTP. `platform:doctor` reports it as a
+    | warning in production, because a platform holding children's records and
+    | other people's money with its privileged accounts on password-only is a
+    | decision somebody should have to make out loud.
+    */
+
+    'security' => [
+        'two_factor' => [
+            'enforce' => filter_var(env('PLATFORM_ENFORCE_TWO_FACTOR', true), FILTER_VALIDATE_BOOLEAN),
+
+            'required_for_permissions' => [
+                'settings.manage.security',
+                'tutors.approve',
+            ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Video meetings (§14, §36, §37, ADR-05)
     |--------------------------------------------------------------------------
     */

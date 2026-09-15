@@ -13,6 +13,7 @@ use App\Domain\Administration\Policies\FilePolicy;
 use App\Domain\Administration\Policies\SettingPolicy;
 use App\Domain\Administration\Roles;
 use App\Domain\Identity\Models\User;
+use App\Domain\Identity\TwoFactorPolicy;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -21,7 +22,7 @@ use Spatie\Permission\Exceptions\PermissionDoesNotExist;
 /**
  * Authorization wiring (ADR-09, docs/05 §5).
  *
- * Two jobs, both of which have to be in `Gate::before` and nowhere else:
+ * Three jobs, all of which have to be in `Gate::before` and nowhere else:
  *
  * 1. Super Admin gets a bypass. This is the ONLY place a role name appears in
  *    authorization logic. Everywhere else the code asks for a permission, so a
@@ -40,7 +41,11 @@ use Spatie\Permission\Exceptions\PermissionDoesNotExist;
  * and the whole point of the fallthrough is that a model-level check —
  * `$user->can('view', $student)` — must still get its turn.
  *
- * A third job arrives with the policies: registering them by hand, because
+ * 3. Two-factor enforcement for privileged permissions sits ahead of both, because
+ *    it has to be able to refuse a Super Admin. See `TwoFactorPolicy` for why the
+ *    refusal is a rule rather than a removed grant.
+ *
+ * A fourth job arrives with the policies: registering them by hand, because
  * Laravel's convention-based discovery looks under `App\Models` and
  * `App\Policies`, neither of which this project uses.
  */
@@ -56,6 +61,21 @@ final class AuthServiceProvider extends ServiceProvider
             // must decline, not raise a TypeError during an unrelated check.
             if (! $user instanceof User) {
                 return null;
+            }
+
+            // BEFORE the Super Admin bypass, and the ordering is the whole point:
+            // `settings.manage.security` is a permission Super Admin holds, so a
+            // bypass that ran first would wave through exactly the account this rule
+            // exists to protect (docs/07 W7).
+            //
+            // `false` here is a veto — no policy gets a second opinion — which is
+            // correct, because the question is not "may this user do this" but "may
+            // this user exercise this permission until they prove a second factor".
+            // Nothing else is affected: the account stays active, the grant stays on
+            // the role, and confirming 2FA restores the permission on the next check
+            // with no data to put back.
+            if (TwoFactorPolicy::blocks($user, $ability)) {
+                return false;
             }
 
             if ($user->hasRole(Roles::SUPER_ADMIN)) {

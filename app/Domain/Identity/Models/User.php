@@ -93,6 +93,30 @@ class User extends Authenticatable implements MustVerifyEmail
     use GeneratesUuid, HasFactory, HasRoles, Notifiable, SoftDeletes;
 
     /**
+     * In-memory defaults matching the ones the schema declares.
+     *
+     * `status`, `auth_provider` and `created_by_type` are NOT NULL with column
+     * defaults, and a column default is applied by the DATABASE, not by Eloquent: a
+     * User built by a factory, an importer or `new User` has no `status` attribute
+     * at all until it is re-read. Every consumer is then left deciding what a
+     * missing lifecycle state means, and the honest answer is the one the schema
+     * already gives.
+     *
+     * The values are literals because a property initializer has to be a constant
+     * expression, and `UserStatus::Pending->value` is not one. UserModelTest pins
+     * each of them to the enum case it came from, so renaming a case fails a test
+     * rather than quietly changing what a new account is.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'status' => 'pending',
+        'auth_provider' => 'password',
+        'created_by_type' => 'self_registered',
+        'two_factor_enabled' => false,
+    ];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

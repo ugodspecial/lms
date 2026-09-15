@@ -68,6 +68,23 @@ final class UserModelTest extends TestCase
         (new User)->fill(['name' => 'A', 'avatar_file_id' => 1]);
     }
 
+    public function test_the_in_memory_defaults_are_the_ones_the_schema_declares(): void
+    {
+        // A column default is applied by the database, not by Eloquent, so without
+        // these a freshly built User has no lifecycle state at all until it is
+        // re-read — and every consumer is left deciding what that means. The values
+        // in the model are literals, because a property initializer cannot evaluate
+        // `UserStatus::Pending->value`; this is what stops one of them drifting.
+        $user = new User;
+
+        $this->assertSame(UserStatus::Pending, $user->status);
+        $this->assertSame(AuthProvider::Password, $user->auth_provider);
+        $this->assertSame(UserCreatedBy::SelfRegistered, $user->created_by_type);
+        $this->assertFalse($user->two_factor_enabled);
+        $this->assertFalse($user->isActive());
+        $this->assertFalse($user->hasConfirmedTwoFactor());
+    }
+
     public function test_status_provider_and_origin_are_read_as_enums_not_strings(): void
     {
         $user = new User;
