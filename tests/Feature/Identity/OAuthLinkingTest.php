@@ -506,9 +506,13 @@ final class OAuthLinkingTest extends TestCase
 
         $this->assertInstanceOf(AuditLog::class, $entry);
         $this->assertSame('connected', $entry->old_values['status']);
-        $this->assertTrue($entry->old_values['had_refresh_token']);
         $this->assertSame('revoked', $entry->new_values['status']);
-        $this->assertTrue($entry->new_values['tokens_cleared']);
+
+        // assertTrue rather than assertArrayHasKey: a key the scrubber ate would
+        // still be present, holding '[REDACTED]'. These two names are deliberately
+        // free of `token` — see the note at the audit call in disconnect().
+        $this->assertTrue($entry->old_values['refresh_credential_present']);
+        $this->assertTrue($entry->new_values['credentials_cleared']);
     }
 
     public function test_the_last_way_into_an_account_cannot_be_disconnected(): void

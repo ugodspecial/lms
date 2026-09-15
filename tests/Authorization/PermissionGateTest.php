@@ -219,7 +219,12 @@ final class PermissionGateTest extends TestCase
         // permission a role does not hold describes a rule that never applies,
         // which is how a policy ends up written for the wrong audience.
         foreach (Roles::ALL as $role) {
-            $held = $this->user($role);
+            // Confirmed second factor, so this measures the seeder against the
+            // registry and not the two-factor rule that sits ahead of every grant
+            // (docs/07 W7). Left unconfirmed, Super Admin and Administrator would be
+            // refused the privileged permissions here for a reason this test is not
+            // about — and the message below would blame the seeder for it.
+            $held = $this->confirmTwoFactor($this->user($role));
 
             foreach (Roles::permissionsFor($role) as $permission) {
                 $this->assertTrue(

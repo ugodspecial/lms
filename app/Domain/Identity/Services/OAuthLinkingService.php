@@ -398,18 +398,26 @@ final class OAuthLinkingService
             $account->refresh_token = null;
             $account->save();
 
+            // Neither key may contain `token`. SensitiveDataScrubber redacts a key
+            // that IS, STARTS WITH or ENDS WITH an entry in
+            // platform.logging.redact_keys, so `had_refresh_token` (ends with
+            // `refresh_token`) and `tokens_cleared` (starts with `token`) both
+            // arrived in the audit trail as `[REDACTED]`. The values were booleans
+            // ABOUT a credential and never the credential, and blanking them erased
+            // the only record that a revocation had anything to revoke — which is
+            // the fact an auditor asks for when a link turns up unusable later.
             $this->audit->record(
                 event: 'auth.oauth_unlinked',
                 subject: $account,
                 oldValues: [
                     'status' => $previousStatus,
-                    'had_refresh_token' => $hadRefreshToken,
+                    'refresh_credential_present' => $hadRefreshToken,
                 ],
                 newValues: [
                     'status' => ConnectedAccountStatus::Revoked->value,
                     'provider' => $account->provider->value,
                     'purpose' => $account->purpose->value,
-                    'tokens_cleared' => true,
+                    'credentials_cleared' => true,
                 ],
                 tags: ['identity', 'oauth', $account->provider->value],
                 actor: $actor ?? $owner,
