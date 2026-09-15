@@ -93,7 +93,7 @@ class User extends Authenticatable implements MustVerifyEmail
     use GeneratesUuid, HasFactory, HasRoles, Notifiable, SoftDeletes;
 
     /**
-     * In-memory defaults matching the ones the schema declares.
+     * Give a freshly built User the lifecycle state the schema would give it.
      *
      * `status`, `auth_provider` and `created_by_type` are NOT NULL with column
      * defaults, and a column default is applied by the DATABASE, not by Eloquent: a
@@ -102,19 +102,40 @@ class User extends Authenticatable implements MustVerifyEmail
      * missing lifecycle state means, and the honest answer is the one the schema
      * already gives.
      *
-     * The values are literals because a property initializer has to be a constant
-     * expression, and `UserStatus::Pending->value` is not one. UserModelTest pins
-     * each of them to the enum case it came from, so renaming a case fails a test
-     * rather than quietly changing what a new account is.
+     * Set after `parent::__construct` rather than through `$attributes`, because a
+     * property initializer has to be a constant expression and `UserStatus::Pending
+     * ->value` is not one — and a literal that drifts from its case is rejected by
+     * the CHECK constraint `EnumSchema` builds from the enum, at INSERT time, in
+     * production. Writing the raw attribute also keeps `fill()` out of it, so the
+     * narrow fillable list still means what it says.
      *
-     * @var array<string, mixed>
+     * @param  array<string, mixed>  $attributes
      */
-    protected $attributes = [
-        'status' => 'pending',
-        'auth_provider' => 'password',
-        'created_by_type' => 'self_registered',
-        'two_factor_enabled' => false,
-    ];
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+
+        foreach (self::schemaDefaults() as $column => $value) {
+            if (! array_key_exists($column, $this->attributes)) {
+                $this->attributes[$column] = $value;
+            }
+        }
+    }
+
+    /**
+     * The columns the schema defaults, read from the enums they hold.
+     *
+     * @return array<string, string|bool>
+     */
+    private static function schemaDefaults(): array
+    {
+        return [
+            'status' => UserStatus::Pending->value,
+            'auth_provider' => AuthProvider::Password->value,
+            'created_by_type' => UserCreatedBy::SelfRegistered->value,
+            'two_factor_enabled' => false,
+        ];
+    }
 
     /**
      * @return array<string, string>

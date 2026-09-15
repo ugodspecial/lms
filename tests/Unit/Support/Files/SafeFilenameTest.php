@@ -54,7 +54,7 @@ final class SafeFilenameTest extends TestCase
         $nasty = [
             '../../etc/passwd',
             'a/b/c/d.pdf',
-            "C:\\Users\\x\\secret.docx",
+            'C:\\Users\\x\\secret.docx',
             '/leading/slash.txt',
             'trailing/slash/',
         ];

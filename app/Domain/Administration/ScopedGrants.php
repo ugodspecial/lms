@@ -119,9 +119,10 @@ final class ScopedGrants
      */
     private static function qualifiers(string $permission): array
     {
-        $notes = Permissions::SCOPED[$permission] ?? [];
-
-        return is_array($notes) ? $notes : [];
+        // SCOPED is a const array of role => qualifier maps, so the lookup is
+        // already the shape this method promises and `?? []` is the whole of the
+        // defence: a permission with no qualifications has no entry at all.
+        return Permissions::SCOPED[$permission] ?? [];
     }
 
     /**

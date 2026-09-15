@@ -27,11 +27,21 @@ use Illuminate\Support\Carbon;
  * to act as somebody's Google or Zoom account (§58); the app key is the only thing
  * standing between a leaked dump and a leaked calendar.
  *
+ * `meta` and the `user` relation are declared above because neither can be
+ * inferred: `meta` is JSON in the column and an array everywhere it is read, and a
+ * relation's magic property resolves to `Model` unless the model says which one it
+ * is — which turns every `$account->user` at a call site into a type error rather
+ * than a wrong query.
+ *
  * `scopes` has no cast on purpose. OAuth scopes are a space-delimited string on
  * the wire and a list in our heads, and the two are not interchangeable: whichever
  * representation the integration layer settles on belongs there, not baked into a
  * persistence cast that every provider then has to satisfy.
  *
+ * @property array<array-key, mixed>|null $meta
+ * @property User|null $user
+ * @property array<array-key, mixed>|null $meta
+ * @property User|null $user
  * @property Carbon|null $expires_at
  * @property Carbon|null $last_used_at
  * @property ConnectedProvider $provider

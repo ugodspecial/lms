@@ -70,7 +70,7 @@ final class FileService
      *
      * @throws PlatformException if the upload is unacceptable or the visibility is
      *                           too open for the category
-     * @throws RuntimeException  if the storage tiers are misconfigured
+     * @throws RuntimeException if the storage tiers are misconfigured
      */
     public function store(
         UploadedFile $upload,

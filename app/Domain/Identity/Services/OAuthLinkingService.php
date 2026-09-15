@@ -61,24 +61,16 @@ final class OAuthLinkingService
      * than adding a second link to the same identity. Duplicate rows here would
      * mean two answers to "which token do we use for this person's calendar".
      *
-     * @param  string|null  $scopes  the scopes the provider granted, as a
-     *                               space-delimited string. NULL when the provider
-     *                               did not say: recording the scopes we ASKED for
-     *                               would claim something we did not observe.
-     * @param  DateTimeInterface|null  $expiresAt  when the access token dies, as the
-     *                               provider reported it (`getExpiry()`). NULL means
-     *                               no expiry is recorded, and a link with no
-     *                               recorded expiry is treated as usable until a
-     *                               call fails — which is what the token refresher
-     *                               in the integration layer is for (docs/07 W6).
+     * `$scopes` is what the provider GRANTED, space-delimited, or null when it did
+     * not say: recording the scopes that were asked for would claim something
+     * nobody observed. `$expiresAt` is when the access token dies as the provider
+     * reported it; null means no expiry is recorded, and a link with no recorded
+     * expiry is treated as usable until a call fails — which is what the token
+     * refresher in the integration layer is for (docs/07 W6).
      *
-     * @throws PlatformException 422 `identity.provider_identity_missing` if the
-     *                               provider returned no subject identifier
-     * @throws PlatformException 422 `identity.provider_email_unverified` if the
-     *                               provider explicitly reports the address as
-     *                               unverified
-     * @throws PlatformException 409 `identity.provider_already_linked` if another
-     *                               user holds this identity
+     * @throws PlatformException 422 `identity.provider_identity_missing`, no subject id
+     * @throws PlatformException 422 `identity.provider_email_unverified`, provider says so
+     * @throws PlatformException 409 `identity.provider_already_linked`, another user holds it
      */
     public function link(
         User $user,
@@ -190,10 +182,8 @@ final class OAuthLinkingService
      * registered with a password add Google later without ending up with two
      * accounts; creation is last, and only for an address nobody holds.
      *
-     * @throws PlatformException 422 `identity.provider_email_missing` if the
-     *                               provider returned no address
-     * @throws PlatformException 409 `identity.email_held_by_closed_account` if the
-     *                               address belongs to a deactivated account
+     * @throws PlatformException 422 `identity.provider_email_missing`, no address shared
+     * @throws PlatformException 409 `identity.email_held_by_closed_account`, address taken
      */
     public function findOrCreateForLogin(ConnectedProvider $provider, ProviderUser $providerUser): User
     {
